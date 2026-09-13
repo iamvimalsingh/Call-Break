@@ -455,4 +455,81 @@ export class CallBreakRulesEngine implements IRulesEngine {
       }))
     );
   }
+
+  /**
+   * Calculates the sum of all 4 players' current bids in the round.
+   */
+  public getTotalBids(state: GameState): number {
+    return CLOCKWISE_PLAYER_ORDER.reduce((sum, pos) => {
+      const bid = state.players[pos]?.currentBid;
+      return sum + (typeof bid === 'number' ? bid : 0);
+    }, 0);
+  }
+
+  /**
+   * Checks whether re-bidding is required for the round after all 4 players have submitted their bids.
+   * Special Call Break rule: if the sum of all 4 bids is <= 8, minimum bid total was not reached.
+   */
+  public isRebidRequired(state: GameState): boolean {
+    const allHaveBid = CLOCKWISE_PLAYER_ORDER.every(
+      (pos) => typeof state.players[pos]?.currentBid === 'number'
+    );
+    if (!allHaveBid) return false;
+    return this.getTotalBids(state) <= 8;
+  }
+
+  /**
+   * Re-deals 13 cards to all players and restarts bidding phase for the current round
+   * without penalizing cumulative scores or advancing the dealer.
+   */
+  public redealRound(
+    state: GameState,
+    cardEngine: ICardEngine,
+    seed?: number
+  ): GameState {
+    const roundNumber = state.currentRound;
+    const dealer = state.dealer;
+    const startingPlayer = this.getStartingPlayer(dealer);
+
+    // Deck lifecycle
+    const deck = cardEngine.createDeck();
+    const shuffledDeck = cardEngine.shuffle(deck, seed);
+    const dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+
+    // Prepare fresh player states for re-bid, keeping cumulative scores intact
+    const updatedPlayers: Record<PlayerPosition, any> = { ...state.players };
+
+    for (const pos of CLOCKWISE_PLAYER_ORDER) {
+      const rawHand = dealtHands[pos] ?? [];
+      const hand = pos === PlayerPosition.SOUTH ? cardEngine.sortHand(rawHand) : rawHand;
+
+      updatedPlayers[pos] = {
+        ...state.players[pos],
+        hand,
+        currentBid: null,
+        tricksWon: 0,
+        isTurn: pos === startingPlayer,
+        isDealer: pos === dealer,
+      };
+    }
+
+    const totalBids = this.getTotalBids(state);
+
+    return Object.freeze({
+      ...state,
+      status: GameStatus.BIDDING,
+      dealer,
+      currentPlayer: startingPlayer,
+      players: Object.freeze(updatedPlayers),
+      currentTrick: Object.freeze({
+        trickNumber: 1,
+        leader: startingPlayer,
+        leadSuit: null,
+        cards: Object.freeze([]),
+        winner: null,
+      }),
+      completedTricks: Object.freeze([]),
+      lastActionMessage: `Total bids = ${totalBids} (≤ 8). Minimum bid total not reached. Re-bidding round!`,
+    });
+  }
 }

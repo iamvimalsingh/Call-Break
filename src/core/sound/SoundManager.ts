@@ -17,7 +17,8 @@ export type SoundEffect =
   | 'matchEnd'
   | 'warning'
   | 'click'
-  | 'pop';
+  | 'pop'
+  | 'tick';
 
 export class SoundManager {
   private audioCtx: AudioContext | null = null;
@@ -170,6 +171,9 @@ export class SoundManager {
           break;
         case 'pop':
           this.synthCardHoverSound(ctx);
+          break;
+        case 'tick':
+          this.synthTickSound(ctx);
           break;
       }
     } catch (e) {
@@ -406,6 +410,26 @@ export class SoundManager {
 
     osc.start(now);
     osc.stop(now + 0.17);
+  }
+
+  /** Subtle clock tick for urgent countdown */
+  private synthTickSound(ctx: AudioContext): void {
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.exponentialRampToValueAtTime(440, now + 0.035);
+
+    gain.gain.setValueAtTime(this.volume * 0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.045);
   }
 }
 

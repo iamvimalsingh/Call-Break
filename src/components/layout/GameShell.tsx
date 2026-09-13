@@ -7,9 +7,11 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { GameMode, GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
 import { Card } from '../../models/card';
+import { TurnTimerPayload, ToastPayload } from '../../models/multiplayer';
 import { sharedGameStore } from '../../core/state/gameStore';
 import { LocalGameController } from '../../core/controller/LocalGameController';
 import { CardEngine } from '../../core/deck/CardEngine';
@@ -30,6 +32,8 @@ import { SettingsModal } from '../settings/SettingsModal';
 import { InteractiveTutorialModal } from '../tutorial/InteractiveTutorialModal';
 import { GameModeModal } from '../modals/GameModeModal';
 import { RoomLobbyModal } from '../modals/RoomLobbyModal';
+import { LeaveMatchModal } from '../modals/LeaveMatchModal';
+import { TableMenuModal } from '../modals/TableMenuModal';
 import { BotDifficulty } from '../../core/contracts/IBotStrategy';
 import { useSettings } from '../../core/settings/useSettings';
 import { sharedHistoryService } from '../../core/history/HistoryService';
@@ -57,6 +61,16 @@ export const GameShell: React.FC = () => {
   const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>(BotDifficulty.MEDIUM);
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [savedGameRound, setSavedGameRound] = useState<number | undefined>(undefined);
+  const [isLeaveMatchModalOpen, setIsLeaveMatchModalOpen] = useState(false);
+  const [pendingExitAction, setPendingExitAction] = useState<(() => void) | null>(null);
+  const [isTableMenuOpen, setIsTableMenuOpen] = useState(false);
+  const [roomCode, setRoomCode] = useState<string | null>(() => sharedMultiplayerClient.getRoomState()?.roomCode ?? null);
+  const [isHost, setIsHost] = useState<boolean>(() => {
+    const r = sharedMultiplayerClient.getRoomState();
+    return r ? r.hostId === r.myClientId : false;
+  });
+  const [turnTimer, setTurnTimer] = useState<TurnTimerPayload | null>(null);
+  const [toast, setToast] = useState<{ id: string; message: string; type?: string } | null>(null);
 
   const { settings } = useSettings();
   const { isMuted, toggleMute } = useSound();
@@ -134,11 +148,113 @@ export const GameShell: React.FC = () => {
       }
     });
 
+    const unsubRoom = sharedMultiplayerClient.onRoomState((room) => {
+      setRoomCode(room.roomCode);
+      setIsHost(room.hostId === room.myClientId);
+    });
+
+    const unsubTimer = sharedMultiplayerClient.onTurnTimer((payload) => {
+      setTurnTimer(payload);
+      if (payload.isExtraTime && payload.remainingSec <= 5 && payload.remainingSec > 0 && !isMuted) {
+        soundManager.play('tick');
+      }
+    });
+
+    const unsubToast = sharedMultiplayerClient.onToast((payload) => {
+      setToast({
+        id: Date.now().toString(),
+        message: payload.message,
+        type: payload.type || 'info',
+      });
+    });
+
     return () => {
       unsubState();
       unsubEvent();
+      unsubRoom();
+      unsubTimer();
+      unsubToast();
     };
-  }, []);
+  }, [isMuted]);
+
+  // Auto-dismiss in-table toast notification
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = setTimeout(() => {
+      setToast(null);
+    }, 4500);
+    return () => clearTimeout(timeout);
+  }, [toast]);
+
+  // Offline Turn Countdown Timer for Human (South) (45s Main + 15s Extra Time)
+  useEffect(() => {
+    if (gameState.mode !== GameMode.OFFLINE_BOTS) {
+      return;
+    }
+
+    if (
+      (gameState.status !== GameStatus.BIDDING && gameState.status !== GameStatus.PLAYING) ||
+      gameState.currentPlayer !== PlayerPosition.SOUTH
+    ) {
+      setTurnTimer(null);
+      return;
+    }
+
+    let isExtra = false;
+    let remaining = 45;
+    let total = 45;
+
+    setTurnTimer({
+      position: PlayerPosition.SOUTH,
+      rawPosition: PlayerPosition.SOUTH,
+      remainingSec: remaining,
+      totalSec: total,
+      isExtraTime: false,
+    });
+
+    const intervalId = setInterval(() => {
+      remaining -= 1;
+
+      if (!isExtra && remaining <= 0) {
+        // Activate 15s Extra Time
+        isExtra = true;
+        total = 15;
+        remaining = 15;
+      } else if (isExtra && remaining <= 0) {
+        // Total 60s AFK timeout expired
+        clearInterval(intervalId);
+        setTurnTimer(null);
+
+        // Auto move for South
+        if (gameState.status === GameStatus.BIDDING) {
+          handleSubmitBid(1);
+        } else if (gameState.status === GameStatus.PLAYING) {
+          const currentLegal = controller.getLegalMovesForPlayer(PlayerPosition.SOUTH);
+          if (currentLegal.length > 0) {
+            handlePlayCard(currentLegal[0]);
+          }
+        }
+        return;
+      }
+
+      if (isExtra && remaining <= 5 && remaining > 0 && !isMuted) {
+        soundManager.play('tick');
+      }
+
+      setTurnTimer({
+        position: PlayerPosition.SOUTH,
+        rawPosition: PlayerPosition.SOUTH,
+        remainingSec: remaining,
+        totalSec: total,
+        isExtraTime: isExtra,
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+      setTurnTimer(null);
+    };
+  }, [gameState.mode, gameState.status, gameState.currentPlayer, isMuted, controller]);
 
   // Compute legal moves for human player (South) using RulesEngine
   const legalMoves = useMemo(() => {
@@ -228,12 +344,90 @@ export const GameShell: React.FC = () => {
     checkSavedGame();
   }, [checkSavedGame, gameState.status]);
 
+  // Listen for re-bid events from offline game controller
+  useEffect(() => {
+    const unsubRebid = controller.onRebid((_totalBids, message) => {
+      soundManager.play('warning');
+      setToast({
+        id: Date.now().toString(),
+        message,
+        type: 'warning',
+      });
+    });
+    return () => {
+      unsubRebid();
+    };
+  }, [controller]);
+
+  // Guard browser refresh/close when match is actively in progress
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const isMatchActive =
+        gameState.status !== GameStatus.IDLE && gameState.status !== GameStatus.MATCH_FINISHED;
+      if (isMatchActive) {
+        e.preventDefault();
+        e.returnValue = 'A Call Break match is currently in progress. Do you want to leave?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [gameState.status]);
+
+  // State guard: if a match is actively in progress, require explicit exit confirmation
+  const guardActiveMatch = useCallback(
+    (action: () => void) => {
+      const isMatchActive =
+        gameState.status !== GameStatus.IDLE && gameState.status !== GameStatus.MATCH_FINISHED;
+
+      if (isMatchActive) {
+        soundManager.play('warning');
+        setPendingExitAction(() => action);
+        setIsLeaveMatchModalOpen(true);
+      } else {
+        action();
+      }
+    },
+    [gameState.status]
+  );
+
+  const handleConfirmLeaveMatch = useCallback(() => {
+    soundManager.play('click');
+    setIsLeaveMatchModalOpen(false);
+
+    // Disconnect socket and leave room if multiplayer is active
+    if (gameState.mode === GameMode.ONLINE_MULTIPLAYER || sharedMultiplayerClient.isConnected()) {
+      sharedMultiplayerClient.leaveRoom();
+      sharedMultiplayerClient.disconnect();
+    }
+
+    // Clean up active saved game so seat and state are cleared
+    sharedActiveGameService.clearActiveGame();
+
+    // Execute the pending action, or default to returning to Home
+    if (pendingExitAction) {
+      pendingExitAction();
+      setPendingExitAction(null);
+    } else {
+      setIsHomeOpen(true);
+    }
+  }, [gameState.mode, pendingExitAction]);
+
+  const handleCancelLeaveMatch = useCallback(() => {
+    soundManager.play('click');
+    setIsLeaveMatchModalOpen(false);
+    setPendingExitAction(null);
+  }, []);
+
   // User Actions
   const handleStartNewMatch = useCallback(() => {
     if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
       sharedMultiplayerClient.leaveRoom();
     }
-    controller.startNewMatch();
+    controller.startNewMatch(GameMode.OFFLINE_BOTS, true);
     sharedActiveGameService.clearActiveGame();
     setIsHomeOpen(false);
     setIsFinalResultOpen(false);
@@ -245,18 +439,22 @@ export const GameShell: React.FC = () => {
 
   const handleSelectSolo = useCallback(
     (difficulty: BotDifficulty) => {
-      setBotDifficulty(difficulty);
-      setIsGameModeOpen(false);
-      handleStartNewMatch();
+      guardActiveMatch(() => {
+        setBotDifficulty(difficulty);
+        setIsGameModeOpen(false);
+        handleStartNewMatch();
+      });
     },
-    [handleStartNewMatch]
+    [guardActiveMatch, handleStartNewMatch]
   );
 
   const handleSelectFriends = useCallback(() => {
-    setIsGameModeOpen(false);
-    setRoomLobbyTab('create');
-    setIsRoomLobbyOpen(true);
-  }, []);
+    guardActiveMatch(() => {
+      setIsGameModeOpen(false);
+      setRoomLobbyTab('create');
+      setIsRoomLobbyOpen(true);
+    });
+  }, [guardActiveMatch]);
 
   const handleStartRoomMatch = useCallback(
     (_roomCode: string, _isHost: boolean, _autoFillBots: boolean) => {
@@ -329,10 +527,30 @@ export const GameShell: React.FC = () => {
         onOpenScoreboard={() => setIsScoreboardOpen(true)}
         onOpenInspector={() => setIsInspectorOpen(true)}
         onOpenRules={() => setIsRulesOpen(true)}
-        onOpenHome={() => setIsHomeOpen(true)}
-        onStartNewGame={handleStartNewMatch}
+        onOpenHome={() => guardActiveMatch(() => setIsHomeOpen(true))}
+        onStartNewGame={() => guardActiveMatch(handleStartNewMatch)}
+        onOpenTableMenu={() => setIsTableMenuOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenModeSelect={() => setIsGameModeOpen(true)}
+        onOpenModeSelect={() => guardActiveMatch(() => setIsGameModeOpen(true))}
+        onShareRoom={() => {
+          if (!roomCode) return;
+          const currentUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://callbreak.app';
+          const joinLink = `${currentUrl}?room=${roomCode}`;
+          const inviteMessage = `Join my live Call Break table! Code: ${roomCode} - ${joinLink}`;
+          const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(inviteMessage)}`;
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(joinLink).catch(() => {});
+          }
+          if (typeof window !== 'undefined') {
+            window.open(whatsappUrl, '_blank');
+          }
+        }}
+        onLeaveRoom={() => guardActiveMatch(() => {
+          if (roomCode) {
+            sharedMultiplayerClient.leaveRoom();
+          }
+          setIsHomeOpen(true);
+        })}
       />
 
       {/* Main Game Shell Body (Flex Row with Desktop Side Rails + Center Table) */}
@@ -363,7 +581,7 @@ export const GameShell: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setIsGameModeOpen(true)}
+                  onClick={() => guardActiveMatch(() => setIsGameModeOpen(true))}
                   className="w-full px-3 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 border border-amber-800/70 transition-all flex items-center gap-2 text-xs font-bold cursor-pointer shadow-xs"
                 >
                   <Users className="w-3.5 h-3.5 text-amber-400" />
@@ -436,13 +654,31 @@ export const GameShell: React.FC = () => {
         </aside>
 
         {/* Center Main Playing Table */}
-        <main className="flex-1 w-full max-w-4xl min-h-0 flex flex-col items-center justify-center overflow-hidden">
+        <main className="relative flex-1 w-full max-w-4xl min-h-0 flex flex-col items-center justify-center overflow-hidden">
+          {/* Toast Notification Banner */}
+          <AnimatePresence>
+            {toast && (
+              <motion.div
+                key={toast.id}
+                initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -16, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                className="absolute top-2 sm:top-3 left-1/2 -translate-x-1/2 z-50 px-3.5 sm:px-4 py-1.5 rounded-full bg-stone-900/95 border border-emerald-400/60 text-stone-100 text-xs sm:text-sm font-semibold shadow-2xl flex items-center gap-2 backdrop-blur-md ring-1 ring-emerald-400/30 max-w-[90vw] text-center"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                <span>{toast.message}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <GameTable
             state={gameState}
             legalMoves={legalMoves}
             onPlayCard={handlePlayCard}
             onSubmitBid={handleSubmitBid}
             ruleCoachEnabled={settings.ruleCoachEnabled}
+            turnTimer={turnTimer}
           />
         </main>
 
@@ -458,7 +694,7 @@ export const GameShell: React.FC = () => {
                 <button
                   type="button"
                   id="btn-side-new-game"
-                  onClick={handleStartNewMatch}
+                  onClick={() => guardActiveMatch(handleStartNewMatch)}
                   className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold transition-all flex items-center gap-2 text-xs cursor-pointer shadow-md shadow-emerald-950/40"
                   title="Start Fresh Match"
                 >
@@ -468,10 +704,12 @@ export const GameShell: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setRoomLobbyTab('create');
-                    setIsRoomLobbyOpen(true);
-                  }}
+                  onClick={() =>
+                    guardActiveMatch(() => {
+                      setRoomLobbyTab('create');
+                      setIsRoomLobbyOpen(true);
+                    })
+                  }
                   className="w-full px-3 py-2 rounded-xl bg-amber-600/90 hover:bg-amber-500 text-stone-950 font-extrabold transition-all flex items-center gap-2 text-xs cursor-pointer shadow-sm"
                   title="Create or Join Private Table"
                 >
@@ -548,78 +786,10 @@ export const GameShell: React.FC = () => {
         </aside>
       </div>
 
-      {/* Bottom Footer Controls (Mobile & Tablet only, hidden on lg desktop to maximize vertical space) */}
-      <footer className="lg:hidden w-full bg-stone-900/95 border-t border-stone-800/90 px-2 sm:px-4 py-1 flex items-center justify-between gap-1 sm:gap-2 text-xs z-20 shrink-0">
-        <div className="flex items-center gap-1.5 text-stone-400 min-w-0">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          <span className="font-mono text-[10px] truncate max-w-[120px] xs:max-w-[180px]">
-            {gameState.status === GameStatus.IDLE
-              ? 'Ready to play'
-              : `R${gameState.currentRound}/${gameState.config.totalRounds} • ♠ Trump`}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          <button
-            type="button"
-            id="btn-footer-modes"
-            onClick={() => setIsGameModeOpen(true)}
-            className="p-1 xs:px-2 py-1 rounded-lg bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800/80 flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
-            title="Game Modes & Play with Friends"
-          >
-            <Users className="w-3 h-3 text-amber-400" />
-            <span className="hidden xs:inline font-bold">Modes</span>
-          </button>
-
-          <button
-            type="button"
-            id="btn-footer-rules"
-            onClick={() => setIsRulesOpen(true)}
-            className="p-1 xs:px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
-            title="Rules"
-          >
-            <BookOpen className="w-3 h-3 text-stone-300" />
-            <span className="hidden xs:inline">Rules</span>
-          </button>
-
-          <button
-            type="button"
-            id="btn-footer-scoreboard"
-            onClick={() => setIsScoreboardOpen(true)}
-            className="p-1 xs:px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
-            title="Scorecard"
-          >
-            <Trophy className="w-3 h-3 text-amber-400" />
-            <span className="hidden xs:inline">Scores</span>
-          </button>
-
-          <button
-            type="button"
-            id="btn-footer-test"
-            onClick={() => setIsInspectorOpen(true)}
-            className="hidden sm:flex px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/60 items-center gap-1 transition-colors cursor-pointer text-[11px]"
-          >
-            <ShieldCheck className="w-3 h-3 text-emerald-400" />
-            <span>Diag</span>
-          </button>
-
-          <button
-            type="button"
-            id="btn-footer-new-game"
-            onClick={handleStartNewMatch}
-            className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-medium flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
-            title="Start fresh match"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>New</span>
-          </button>
-        </div>
-      </footer>
-
       {/* Home / Lobby Screen Modal */}
       <HomeLobbyModal
         isOpen={isHomeOpen}
-        onStartNewGame={handleStartNewMatch}
+        onStartNewGame={() => guardActiveMatch(handleStartNewMatch)}
         onOpenRules={() => {
           setIsHomeOpen(false);
           setIsRulesOpen(true);
@@ -634,7 +804,7 @@ export const GameShell: React.FC = () => {
         onOpenTutorial={() => setIsTutorialOpen(true)}
         onOpenGameMode={() => {
           setIsHomeOpen(false);
-          setIsGameModeOpen(true);
+          guardActiveMatch(() => setIsGameModeOpen(true));
         }}
         hasActiveGame={gameState.status !== GameStatus.IDLE || hasSavedGame}
         activeGameRound={gameState.status !== GameStatus.IDLE ? gameState.currentRound : savedGameRound}
@@ -663,14 +833,14 @@ export const GameShell: React.FC = () => {
       <MatchHistoryModal
         isOpen={isHistoryOpen}
         onClose={() => setIsHistoryOpen(false)}
-        onStartNewGame={handleStartNewMatch}
+        onStartNewGame={() => guardActiveMatch(handleStartNewMatch)}
       />
 
       {/* Player Statistics Modal */}
       <PlayerStatisticsModal
         isOpen={isStatisticsOpen}
         onClose={() => setIsStatisticsOpen(false)}
-        onStartNewGame={handleStartNewMatch}
+        onStartNewGame={() => guardActiveMatch(handleStartNewMatch)}
         userPosition={PlayerPosition.SOUTH}
       />
 
@@ -692,7 +862,7 @@ export const GameShell: React.FC = () => {
       <InteractiveTutorialModal
         isOpen={isTutorialOpen}
         onClose={() => setIsTutorialOpen(false)}
-        onStartNewGame={handleStartNewMatch}
+        onStartNewGame={() => guardActiveMatch(handleStartNewMatch)}
       />
 
       {/* Round Complete Summary Modal */}
@@ -704,12 +874,22 @@ export const GameShell: React.FC = () => {
         onViewFinalResult={() => setIsFinalResultOpen(true)}
       />
 
-      {/* Final Match Finished Screen Modal */}
+      {/* Final Match Finished Screen Modal with Rematch Flow */}
       <MatchResultModal
         isOpen={isMatchFinished}
         state={gameState}
+        roomCode={roomCode}
         onStartNewMatch={handleStartNewMatch}
-        onOpenHome={() => setIsHomeOpen(true)}
+        onPlayAgain={handleStartNewMatch}
+        onReturnToRoom={() => {
+          setIsFinalResultOpen(false);
+          setRoomLobbyTab('create');
+          setIsRoomLobbyOpen(true);
+        }}
+        onOpenHome={() => {
+          setIsFinalResultOpen(false);
+          setIsHomeOpen(true);
+        }}
         onOpenHistory={() => setIsHistoryOpen(true)}
       />
 
@@ -724,6 +904,60 @@ export const GameShell: React.FC = () => {
       <ArchitectureInspector
         isOpen={isInspectorOpen}
         onClose={() => setIsInspectorOpen(false)}
+      />
+
+      {/* In-Table Game Menu Modal (☰) */}
+      <TableMenuModal
+        isOpen={isTableMenuOpen}
+        gameState={gameState}
+        roomCode={roomCode}
+        isHost={isHost}
+        onClose={() => setIsTableMenuOpen(false)}
+        onOpenRules={() => setIsRulesOpen(true)}
+        onOpenScoreboard={() => setIsScoreboardOpen(true)}
+        onOpenModes={() => {
+          setIsTableMenuOpen(false);
+          guardActiveMatch(() => setIsGameModeOpen(true));
+        }}
+        onOpenSettings={() => {
+          setIsTableMenuOpen(false);
+          setIsSettingsOpen(true);
+        }}
+        onStartNewGame={() => {
+          setIsTableMenuOpen(false);
+          guardActiveMatch(handleStartNewMatch);
+        }}
+        onLeaveGame={() => {
+          setIsTableMenuOpen(false);
+          guardActiveMatch(() => {
+            if (roomCode) {
+              sharedMultiplayerClient.leaveRoom();
+            }
+            setIsHomeOpen(true);
+          });
+        }}
+        onShareRoom={() => {
+          if (!roomCode) return;
+          const currentUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://callbreak.app';
+          const joinLink = `${currentUrl}?room=${roomCode}`;
+          const inviteMessage = `Join my live Call Break table! Code: ${roomCode} - ${joinLink}`;
+          const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(inviteMessage)}`;
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(joinLink).catch(() => {});
+          }
+          if (typeof window !== 'undefined') {
+            window.open(whatsappUrl, '_blank');
+          }
+        }}
+      />
+
+      {/* Leave Active Match Confirmation Guard Modal */}
+      <LeaveMatchModal
+        isOpen={isLeaveMatchModalOpen}
+        isHost={isHost}
+        isMultiplayer={gameState.mode === GameMode.ONLINE_MULTIPLAYER || Boolean(roomCode)}
+        onCancel={handleCancelLeaveMatch}
+        onConfirmLeave={handleConfirmLeaveMatch}
       />
 
       {/* Offline Status Indicator */}

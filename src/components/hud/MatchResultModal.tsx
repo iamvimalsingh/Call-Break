@@ -8,9 +8,9 @@
 
 import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
-import { GameState } from '../../models/gameState';
+import { GameMode, GameState } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
-import { Trophy, RotateCcw, Award, Sparkles, Home, History } from 'lucide-react';
+import { Trophy, RotateCcw, Award, Sparkles, Home, History, Users } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
@@ -18,7 +18,10 @@ import { transitions } from '../../core/animation/animationConfig';
 export interface MatchResultModalProps {
   isOpen: boolean;
   state: GameState;
+  roomCode?: string | null;
   onStartNewMatch: () => void;
+  onPlayAgain?: () => void;
+  onReturnToRoom?: () => void;
   onOpenHistory?: () => void;
   onOpenHome?: () => void;
 }
@@ -26,7 +29,10 @@ export interface MatchResultModalProps {
 export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   isOpen,
   state,
+  roomCode,
   onStartNewMatch,
+  onPlayAgain,
+  onReturnToRoom,
   onOpenHistory,
   onOpenHome,
 }) => {
@@ -238,17 +244,18 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-stone-800/90 bg-stone-950/90 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div className="p-4 sm:p-5 border-t border-stone-800/90 bg-stone-950/90 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             {onOpenHome && (
               <button
                 type="button"
                 id="btn-match-return-home"
                 onClick={onOpenHome}
-                className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                title="Return to Main Menu"
               >
-                <Home className="w-4 h-4" />
-                <span>Home</span>
+                <Home className="w-4 h-4 text-stone-300" />
+                <span>Main Menu</span>
               </button>
             )}
             {onOpenHistory && (
@@ -256,25 +263,41 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
                 type="button"
                 id="btn-match-view-history"
                 onClick={onOpenHistory}
-                className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               >
                 <History className="w-4 h-4 text-amber-400" />
-                <span>Match History</span>
+                <span className="hidden xs:inline">Match History</span>
               </button>
             )}
           </div>
 
-          <motion.button
-            type="button"
-            id="btn-match-new-game"
-            onClick={onStartNewMatch}
-            whileHover={!prefersReducedMotion ? { scale: 1.03 } : undefined}
-            whileTap={!prefersReducedMotion ? { scale: 0.97 } : undefined}
-            className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Start New Match</span>
-          </motion.button>
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
+            {(roomCode || state.mode === GameMode.ONLINE_MULTIPLAYER) && onReturnToRoom && (
+              <button
+                type="button"
+                id="btn-match-return-room"
+                onClick={onReturnToRoom}
+                className="px-4 py-2 sm:py-2.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border border-amber-800/80 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                title="Return to Multiplayer Room Lobby"
+              >
+                <Users className="w-4 h-4 text-amber-400" />
+                <span>Return to Room</span>
+              </button>
+            )}
+
+            <motion.button
+              type="button"
+              id="btn-match-play-again"
+              onClick={onPlayAgain || onStartNewMatch}
+              whileHover={!prefersReducedMotion ? { scale: 1.03 } : undefined}
+              whileTap={!prefersReducedMotion ? { scale: 0.97 } : undefined}
+              className="w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"
+              title="Play again with same players"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>Play Again</span>
+            </motion.button>
+          </div>
         </div>
       </motion.div>
     </div>

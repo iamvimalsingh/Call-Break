@@ -145,4 +145,24 @@ export interface IRulesEngine {
   rankPlayersByScore(
     cumulativeScores: Readonly<Record<PlayerPosition, number>>
   ): readonly { position: PlayerPosition; score: number; rank: number }[];
+
+  /**
+   * Calculates the sum of all 4 players' current bids in the round.
+   */
+  getTotalBids(state: GameState): number;
+
+  /**
+   * Checks whether re-bidding is required for the round after all 4 players have submitted their bids.
+   * Special Call Break rule: if the sum of all 4 bids is <= 8, minimum bid total was not reached.
+   */
+  isRebidRequired(state: GameState): boolean;
+
+  /**
+   * Re-deals 13 cards to all players and restarts bidding phase for the current round without penalizing scores.
+   */
+  redealRound(
+    state: GameState,
+    cardEngine: ICardEngine,
+    seed?: number
+  ): GameState;
 }

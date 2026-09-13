@@ -7,7 +7,14 @@ import { Card } from '../../models/card';
 import { GameEvent } from '../../models/events';
 import { GameState } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
-import { ClientMessage, ConnectionState, RoomState, ServerMessage } from '../../models/multiplayer';
+import {
+  ClientMessage,
+  ConnectionState,
+  RoomState,
+  ServerMessage,
+  ToastPayload,
+  TurnTimerPayload,
+} from '../../models/multiplayer';
 
 export type RoomStateListener = (roomState: RoomState) => void;
 export type GameStateListener = (data: {
@@ -19,6 +26,8 @@ export type GameEventListener = (event: GameEvent) => void;
 export type ErrorListener = (error: { message: string; code?: string }) => void;
 export type GameStartedListener = (roomCode: string) => void;
 export type ConnectionStateListener = (state: ConnectionState, error: string | null) => void;
+export type TurnTimerListener = (payload: TurnTimerPayload) => void;
+export type ToastListener = (payload: ToastPayload) => void;
 
 /**
  * Cleans and sanitizes WebSocket URLs by stripping markdown brackets, parentheses,
@@ -99,6 +108,8 @@ export class MultiplayerClient {
   private gameEventListeners: Set<GameEventListener> = new Set();
   private errorListeners: Set<ErrorListener> = new Set();
   private gameStartedListeners: Set<GameStartedListener> = new Set();
+  private turnTimerListeners: Set<TurnTimerListener> = new Set();
+  private toastListeners: Set<ToastListener> = new Set();
 
   public static getInstance(): MultiplayerClient {
     if (!MultiplayerClient.instance) {
@@ -263,8 +274,21 @@ export class MultiplayerClient {
           this.gameStartedListeners.forEach((fn) => fn(msg.payload.roomCode));
           break;
 
+        case 'MATCH_SYNC':
+          this.gameStartedListeners.forEach((fn) => fn(msg.payload.roomCode));
+          this.gameStateListeners.forEach((fn) => fn(msg.payload));
+          break;
+
         case 'GAME_STATE':
           this.gameStateListeners.forEach((fn) => fn(msg.payload));
+          break;
+
+        case 'TURN_TIMER':
+          this.turnTimerListeners.forEach((fn) => fn(msg.payload));
+          break;
+
+        case 'TOAST_NOTIFICATION':
+          this.toastListeners.forEach((fn) => fn(msg.payload));
           break;
 
         case 'GAME_EVENT':
@@ -363,6 +387,16 @@ export class MultiplayerClient {
   public onGameStarted(listener: GameStartedListener): () => void {
     this.gameStartedListeners.add(listener);
     return () => this.gameStartedListeners.delete(listener);
+  }
+
+  public onTurnTimer(listener: TurnTimerListener): () => void {
+    this.turnTimerListeners.add(listener);
+    return () => this.turnTimerListeners.delete(listener);
+  }
+
+  public onToast(listener: ToastListener): () => void {
+    this.toastListeners.add(listener);
+    return () => this.toastListeners.delete(listener);
   }
 }
 

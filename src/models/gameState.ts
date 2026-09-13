@@ -75,6 +75,7 @@ export interface MatchConfig {
   readonly minBid: number;      // Standard is 1
   readonly maxBid: number;      // Standard is 13
   readonly cardsPerPlayer: number; // 13
+  readonly enableRebiddingRule?: boolean; // When sum(bids) <= 8, triggers re-bid
 }
 
 /**

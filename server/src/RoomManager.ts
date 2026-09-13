@@ -5,7 +5,7 @@
 
 import { WebSocket } from 'ws';
 import { PlayerPosition } from '../../src/models/player';
-import { RoomParticipant, RoomState, ServerMessage } from '../../src/models/multiplayer';
+import { RoomParticipant, RoomState, ServerMessage, TurnTimerPayload } from '../../src/models/multiplayer';
 import { AuthoritativeGameController, PlayerSetupInfo } from './AuthoritativeGameController';
 import { Card } from '../../src/models/card';
 
@@ -32,6 +32,8 @@ export class GameRoom {
   private controller: AuthoritativeGameController | null = null;
   private unsubscribeEvents: (() => void) | null = null;
   private unsubscribeState: (() => void) | null = null;
+  private unsubscribeTimer: (() => void) | null = null;
+  private unsubscribeRebid: (() => void) | null = null;
 
   constructor(roomCode: string, hostClientId: string, hostName: string, hostSocket: WebSocket) {
     this.roomCode = roomCode;
@@ -73,10 +75,99 @@ export class GameRoom {
     playerName: string,
     socket: WebSocket
   ): { success: boolean; position?: PlayerPosition; error?: string } {
-    if (this.status !== 'LOBBY') {
-      return { success: false, error: 'Match has already started in this room.' };
+    if (this.status === 'FINISHED') {
+      return { success: false, error: 'Match has ended in this room.' };
     }
 
+    if (this.status === 'PLAYING') {
+      // 1. Reconnection for already seated player
+      if (this.clientPositions.has(clientId)) {
+        this.clientSockets.set(clientId, socket);
+        const assignedPos = this.clientPositions.get(clientId)!;
+        if (this.controller) {
+          const perspectiveState = this.controller.getPerspectiveState(assignedPos);
+          const syncMsg: ServerMessage = {
+            type: 'MATCH_SYNC',
+            payload: {
+              roomCode: this.roomCode,
+              state: perspectiveState,
+              myPosition: PlayerPosition.SOUTH,
+              rawPosition: assignedPos,
+            },
+          };
+          socket.send(JSON.stringify(syncMsg));
+        }
+        return { success: true, position: assignedPos };
+      }
+
+      // 2. Dynamic Seat Takeover: Look for first available Bot seat in SEAT_ORDER
+      let botPosition: PlayerPosition | null = null;
+      for (const pos of SEAT_ORDER) {
+        const participant = this.players.get(pos);
+        if (participant && participant.isBot) {
+          botPosition = pos;
+          break;
+        }
+      }
+
+      if (!botPosition) {
+        return { success: false, error: 'Room is full (4/4 players)' };
+      }
+
+      // 3. Hot-swap the Bot seat with the incoming human player
+      const incomingName = playerName || `Player ${botPosition}`;
+      const newParticipant: RoomParticipant = {
+        id: clientId,
+        name: incomingName,
+        position: botPosition,
+        isHost: false,
+        isReady: true,
+        isBot: false,
+      };
+
+      this.players.set(botPosition, newParticipant);
+      this.clientSockets.set(clientId, socket);
+      this.clientPositions.set(clientId, botPosition);
+
+      // 4. Update authoritative game controller
+      if (this.controller) {
+        this.controller.takeoverBotSeat(botPosition, clientId, incomingName);
+      }
+
+      // 5. Send authoritative MATCH_SYNC payload to the new human player
+      if (this.controller) {
+        const perspectiveState = this.controller.getPerspectiveState(botPosition);
+        const syncMsg: ServerMessage = {
+          type: 'MATCH_SYNC',
+          payload: {
+            roomCode: this.roomCode,
+            state: perspectiveState,
+            myPosition: PlayerPosition.SOUTH,
+            rawPosition: botPosition,
+          },
+        };
+        socket.send(JSON.stringify(syncMsg));
+      }
+
+      // 6. Broadcast updated Room State and Game State to all players
+      this.broadcastRoomState();
+      this.broadcastGameState();
+
+      // 7. Broadcast friendly toast notification to all players
+      const seatLabel = botPosition.charAt(0).toUpperCase() + botPosition.slice(1).toLowerCase();
+      const takeoverMsg = `${incomingName} joined the table (taking over ${seatLabel})!`;
+      this.broadcast({
+        type: 'TOAST_NOTIFICATION',
+        payload: {
+          message: takeoverMsg,
+          type: 'info',
+        },
+      });
+
+      return { success: true, position: botPosition };
+    }
+
+    // LOBBY status logic:
     // Check if already in room
     if (this.clientSockets.has(clientId)) {
       this.clientSockets.set(clientId, socket);
@@ -222,6 +313,20 @@ export class GameRoom {
       this.broadcastGameState();
     });
 
+    this.unsubscribeTimer = this.controller.onTimerTick((payload) => {
+      this.broadcastTimer(payload);
+    });
+
+    this.unsubscribeRebid = this.controller.onRebid(({ message }) => {
+      this.broadcast({
+        type: 'TOAST_NOTIFICATION',
+        payload: {
+          message,
+          type: 'warning',
+        },
+      });
+    });
+
     this.controller.initializeMatch(playerConfigs);
     return { success: true };
   }
@@ -320,9 +425,35 @@ export class GameRoom {
     }
   }
 
+  public broadcastTimer(payload: TurnTimerPayload): void {
+    for (const [clientId, socket] of this.clientSockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        const clientRawPos = this.clientPositions.get(clientId) ?? PlayerPosition.SOUTH;
+        const clientIdx = SEAT_ORDER.indexOf(clientRawPos);
+        const rawIdx = SEAT_ORDER.indexOf(payload.rawPosition);
+        const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+        const mappedPos = SEAT_ORDER[mappedIdx];
+
+        const msg: ServerMessage = {
+          type: 'TURN_TIMER',
+          payload: {
+            position: mappedPos,
+            rawPosition: payload.rawPosition,
+            remainingSec: payload.remainingSec,
+            totalSec: payload.totalSec,
+            isExtraTime: payload.isExtraTime,
+          },
+        };
+        socket.send(JSON.stringify(msg));
+      }
+    }
+  }
+
   public destroy(): void {
     if (this.unsubscribeEvents) this.unsubscribeEvents();
     if (this.unsubscribeState) this.unsubscribeState();
+    if (this.unsubscribeTimer) this.unsubscribeTimer();
+    if (this.unsubscribeRebid) this.unsubscribeRebid();
     if (this.controller) this.controller.destroy();
     this.clientSockets.clear();
     this.clientPositions.clear();

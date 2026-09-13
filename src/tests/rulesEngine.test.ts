@@ -742,5 +742,73 @@ export function buildRulesEngineTestSuite(): TestHarness {
     assert.equal(winner2, PlayerPosition.NORTH, 'North with ♠K wins over ♠4 and ♥A');
   });
 
+  // Re-Bidding Rule Tests
+  harness.register('Re-Bidding: Sum(bids) <= 8 Triggers Re-deal', 'Re-deals cards and restarts bidding when sum of all 4 bids is <= 8', () => {
+    const rules = new CallBreakRulesEngine();
+    const cardEng = new CardEngine();
+    const initState = createInitialGameState();
+    const stateWithRebid = {
+      ...initState,
+      config: {
+        ...initState.config,
+        enableRebiddingRule: true,
+      },
+    };
+    const store = new GameStateStore(stateWithRebid);
+    const ctrl = new LocalGameController(store, {
+      cardEngine: cardEng,
+      rulesEngine: rules,
+    });
+
+    ctrl.startRound();
+    const state0 = store.getState();
+    assert.equal(state0.status, GameStatus.BIDDING);
+
+    // Dealer is SOUTH -> starting bidder is WEST
+    // Let WEST bid 2, NORTH bid 2, EAST bid 2, SOUTH bid 2 (Sum = 8 <= 8!)
+    let rebidNotified = false;
+    let notifiedTotal = 0;
+    ctrl.onRebid((totalBids) => {
+      rebidNotified = true;
+      notifiedTotal = totalBids;
+    });
+
+    ctrl.submitBid(PlayerPosition.WEST, 2);
+    ctrl.submitBid(PlayerPosition.NORTH, 2);
+    ctrl.submitBid(PlayerPosition.EAST, 2);
+    const lastBidSuccess = ctrl.submitBid(PlayerPosition.SOUTH, 2);
+
+    assert.ok(lastBidSuccess, 'Bid should succeed');
+    assert.ok(rebidNotified, 'Re-bid listener should have been notified');
+    assert.equal(notifiedTotal, 8, 'Total bids should be 8');
+
+    const stateAfterRebid = store.getState();
+    assert.equal(stateAfterRebid.status, GameStatus.BIDDING, 'State must remain in BIDDING phase');
+    assert.equal(stateAfterRebid.players[PlayerPosition.SOUTH].currentBid, null, 'SOUTH bid reset to null');
+    assert.equal(stateAfterRebid.players[PlayerPosition.WEST].currentBid, null, 'WEST bid reset to null');
+    assert.equal(stateAfterRebid.players[PlayerPosition.SOUTH].hand.length, 13, 'Hand re-dealt with 13 cards');
+  });
+
+  harness.register('Re-Bidding: Sum(bids) > 8 Advances to PLAYING', 'Transitions normally to PLAYING phase when sum > 8', () => {
+    const rules = new CallBreakRulesEngine();
+    const cardEng = new CardEngine();
+    const store = new GameStateStore(createInitialGameState());
+    const ctrl = new LocalGameController(store, {
+      cardEngine: cardEng,
+      rulesEngine: rules,
+    });
+
+    ctrl.startRound();
+    // WEST bid 3, NORTH bid 2, EAST bid 2, SOUTH bid 2 (Sum = 9 > 8)
+    ctrl.submitBid(PlayerPosition.WEST, 3);
+    ctrl.submitBid(PlayerPosition.NORTH, 2);
+    ctrl.submitBid(PlayerPosition.EAST, 2);
+    ctrl.submitBid(PlayerPosition.SOUTH, 2);
+
+    const state = store.getState();
+    assert.equal(state.status, GameStatus.PLAYING, 'State must advance to PLAYING');
+    assert.equal(state.players[PlayerPosition.WEST].currentBid, 3);
+  });
+
   return harness;
 }

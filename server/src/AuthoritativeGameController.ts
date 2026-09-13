@@ -8,6 +8,7 @@ import { Card, Rank } from '../../src/models/card';
 import { PlayerPosition, PlayerType, PlayerState } from '../../src/models/player';
 import { GameMode, GameState, GameStatus, PlayedCard } from '../../src/models/gameState';
 import { GameEvent } from '../../src/models/events';
+import { TurnTimerPayload } from '../../src/models/multiplayer';
 import { CardEngine } from '../../src/core/deck/CardEngine';
 import { CallBreakRulesEngine } from '../../src/core/rules/CallBreakRulesEngine';
 import { ScoringEngine } from '../../src/core/scoring/ScoringEngine';
@@ -15,6 +16,9 @@ import { MediumBotStrategy } from '../../src/core/bot/MediumBotStrategy';
 import { GameStateStore } from '../../src/core/state/gameStore';
 import { LocalGameController } from '../../src/core/controller/LocalGameController';
 import { createInitialGameState } from '../../src/core/state/initialState';
+
+export const MAIN_TURN_SECONDS = 45;
+export const EXTRA_TURN_SECONDS = 15;
 
 const POSITIONS: readonly PlayerPosition[] = [
   PlayerPosition.SOUTH,
@@ -35,7 +39,14 @@ export class AuthoritativeGameController {
   private readonly controller: LocalGameController;
   private readonly eventListeners: ((event: GameEvent) => void)[] = [];
   private readonly stateListeners: ((state: GameState) => void)[] = [];
+  private readonly timerListeners: ((payload: TurnTimerPayload) => void)[] = [];
+  private readonly rebidListeners: ((payload: { totalBids: number; message: string }) => void)[] = [];
+
   private botTimer: NodeJS.Timeout | null = null;
+  private turnTimerInterval: NodeJS.Timeout | null = null;
+  private currentTimerPlayer: PlayerPosition | null = null;
+  private remainingSeconds: number = MAIN_TURN_SECONDS;
+  private isExtraTime: boolean = false;
   private unsubscribeStore: (() => void) | null = null;
 
   constructor() {
@@ -45,6 +56,16 @@ export class AuthoritativeGameController {
       rulesEngine: new CallBreakRulesEngine(),
       scoringEngine: new ScoringEngine(),
       botStrategy: new MediumBotStrategy(),
+    });
+
+    this.controller.onRebid((totalBids, message) => {
+      for (const listener of this.rebidListeners) {
+        try {
+          listener({ totalBids, message });
+        } catch (err) {
+          console.error('Error in rebid listener:', err);
+        }
+      }
     });
 
     this.unsubscribeStore = this.store.subscribe((state) => {
@@ -90,6 +111,44 @@ export class AuthoritativeGameController {
     };
   }
 
+  public onTimerTick(listener: (payload: TurnTimerPayload) => void): () => void {
+    this.timerListeners.push(listener);
+    return () => {
+      const idx = this.timerListeners.indexOf(listener);
+      if (idx >= 0) this.timerListeners.splice(idx, 1);
+    };
+  }
+
+  public onRebid(listener: (payload: { totalBids: number; message: string }) => void): () => void {
+    this.rebidListeners.push(listener);
+    return () => {
+      const idx = this.rebidListeners.indexOf(listener);
+      if (idx >= 0) this.rebidListeners.splice(idx, 1);
+    };
+  }
+
+  private broadcastTimerTick(
+    position: PlayerPosition,
+    remaining: number,
+    total: number,
+    extra: boolean
+  ): void {
+    const payload: TurnTimerPayload = {
+      position,
+      rawPosition: position,
+      remainingSec: remaining,
+      totalSec: total,
+      isExtraTime: extra,
+    };
+    for (const listener of this.timerListeners) {
+      try {
+        listener(payload);
+      } catch (err) {
+        console.error('Error in timer listener:', err);
+      }
+    }
+  }
+
   public getState(): GameState {
     return this.store.getState();
   }
@@ -129,18 +188,22 @@ export class AuthoritativeGameController {
 
     const nextState: GameState = {
       ...rawState,
+      config: {
+        ...rawState.config,
+        enableRebiddingRule: true,
+      },
       players: configuredPlayers,
     };
 
     this.store.reset(nextState);
     this.controller.startRound();
-    this.scheduleBotStep();
+    this.advanceTurnOrStepBot();
   }
 
   public submitBid(position: PlayerPosition, bid: number): boolean {
     const success = this.controller.submitBid(position, bid);
     if (success) {
-      this.scheduleBotStep();
+      this.advanceTurnOrStepBot();
     }
     return success;
   }
@@ -150,9 +213,10 @@ export class AuthoritativeGameController {
     if (success) {
       const current = this.store.getState();
       if (current.currentTrick.cards.length === 4) {
+        this.clearTurnTimer();
         this.scheduleTrickResolution();
       } else {
-        this.scheduleBotStep();
+        this.advanceTurnOrStepBot();
       }
     }
     return success;
@@ -161,9 +225,127 @@ export class AuthoritativeGameController {
   public nextRound(): boolean {
     const success = this.controller.nextRound();
     if (success) {
-      this.scheduleBotStep();
+      this.advanceTurnOrStepBot();
     }
     return success;
+  }
+
+  /**
+   * Starts or restarts the 45s + 15s turn timer for the given active human player.
+   */
+  private startTurnTimer(position: PlayerPosition): void {
+    this.clearTurnTimer();
+    this.currentTimerPlayer = position;
+    this.remainingSeconds = MAIN_TURN_SECONDS;
+    this.isExtraTime = false;
+
+    this.broadcastTimerTick(position, MAIN_TURN_SECONDS, MAIN_TURN_SECONDS, false);
+
+    this.turnTimerInterval = setInterval(() => {
+      this.remainingSeconds--;
+
+      if (!this.isExtraTime) {
+        if (this.remainingSeconds > 0) {
+          this.broadcastTimerTick(position, this.remainingSeconds, MAIN_TURN_SECONDS, false);
+        } else {
+          // 45s main time expired -> activate 15s Extra Time
+          this.isExtraTime = true;
+          this.remainingSeconds = EXTRA_TURN_SECONDS;
+          this.broadcastTimerTick(position, EXTRA_TURN_SECONDS, EXTRA_TURN_SECONDS, true);
+        }
+      } else {
+        if (this.remainingSeconds > 0) {
+          this.broadcastTimerTick(position, this.remainingSeconds, EXTRA_TURN_SECONDS, true);
+        } else {
+          // 15s extra time expired (Total 60s elapsed) -> Auto-timeout move
+          this.clearTurnTimer();
+          this.handleTurnTimeout(position);
+        }
+      }
+    }, 1000);
+  }
+
+  /**
+   * Resets and clears the turn timer interval, notifying listeners that timer stopped.
+   */
+  public clearTurnTimer(): void {
+    if (this.turnTimerInterval) {
+      clearInterval(this.turnTimerInterval);
+      this.turnTimerInterval = null;
+    }
+    if (this.currentTimerPlayer) {
+      this.broadcastTimerTick(this.currentTimerPlayer, 0, MAIN_TURN_SECONDS, false);
+      this.currentTimerPlayer = null;
+    }
+  }
+
+  /**
+   * Executes authoritative auto-timeout action when 45s + 15s expires:
+   * - Bidding Phase: Auto-submit safe bid calculated via MediumBotStrategy or bid 1.
+   * - Playing Phase: Auto-play the lowest valid legal card from CallBreakRulesEngine.
+   */
+  private handleTurnTimeout(position: PlayerPosition): void {
+    const state = this.store.getState();
+    if (state.currentPlayer !== position) return;
+
+    if (state.status === GameStatus.BIDDING) {
+      const player = state.players[position];
+      let safeBid = 1;
+      try {
+        const existingBids: Record<PlayerPosition, number | null> = {
+          [PlayerPosition.SOUTH]: state.players[PlayerPosition.SOUTH].currentBid,
+          [PlayerPosition.WEST]: state.players[PlayerPosition.WEST].currentBid,
+          [PlayerPosition.NORTH]: state.players[PlayerPosition.NORTH].currentBid,
+          [PlayerPosition.EAST]: state.players[PlayerPosition.EAST].currentBid,
+        };
+        const strategy = new MediumBotStrategy();
+        safeBid = strategy.decideBid(player.hand, {
+          position,
+          dealer: state.dealer,
+          existingBids,
+          trumpSuit: state.config.trumpSuit,
+        });
+      } catch {
+        safeBid = 1;
+      }
+      const finalBid = Math.max(state.config.minBid, Math.min(state.config.maxBid, safeBid || 1));
+      this.submitBid(position, finalBid);
+    } else if (state.status === GameStatus.PLAYING) {
+      const player = state.players[position];
+      const rulesEngine = new CallBreakRulesEngine();
+      const legalMoves = rulesEngine.getLegalMoves(player.hand, state.currentTrick, state.config.trumpSuit);
+      if (legalMoves.length > 0) {
+        // Sort lowest rank/value card first
+        const sorted = [...legalMoves].sort((a, b) => a.value - b.value);
+        this.playCard(position, sorted[0]);
+      }
+    }
+  }
+
+  /**
+   * Centralized turn driver: clears timers, evaluates active player,
+   * schedules bot decision if BOT, or initiates 45s+15s timer if HUMAN.
+   */
+  private advanceTurnOrStepBot(): void {
+    this.clearTurnTimer();
+    if (this.botTimer) {
+      clearTimeout(this.botTimer);
+      this.botTimer = null;
+    }
+
+    const state = this.store.getState();
+    if (state.status === GameStatus.BIDDING || state.status === GameStatus.PLAYING) {
+      if (state.currentTrick.cards.length === 4) {
+        return;
+      }
+
+      const activePlayer = state.players[state.currentPlayer];
+      if (activePlayer && activePlayer.type === PlayerType.BOT) {
+        this.scheduleBotStep();
+      } else if (activePlayer) {
+        this.startTurnTimer(state.currentPlayer);
+      }
+    }
   }
 
   private scheduleBotStep(): void {
@@ -185,7 +367,7 @@ export class AuthoritativeGameController {
           if (currentState.currentTrick.cards.length === 4) {
             this.scheduleTrickResolution();
           } else {
-            this.scheduleBotStep();
+            this.advanceTurnOrStepBot();
           }
         }
       }, 550);
@@ -204,9 +386,47 @@ export class AuthoritativeGameController {
       if (state.status === GameStatus.ROUND_ENDED) {
         this.controller.completeRound();
       } else {
-        this.scheduleBotStep();
+        this.advanceTurnOrStepBot();
       }
     }, 1100);
+  }
+
+  /**
+   * Dynamically replaces an AI Bot seat with an incoming human player mid-match.
+   * Seamlessly transfers the current round's dealt cards, bid, and won trick counts.
+   */
+  public takeoverBotSeat(
+    position: PlayerPosition,
+    newClientId: string,
+    newPlayerName: string
+  ): boolean {
+    const state = this.store.getState();
+    const existingPlayer = state.players[position];
+    if (!existingPlayer) return false;
+
+    const updatedPlayer: PlayerState = {
+      ...existingPlayer,
+      id: newClientId,
+      name: newPlayerName || `Player ${position}`,
+      type: PlayerType.HUMAN,
+    };
+
+    const nextPlayers: Record<PlayerPosition, PlayerState> = {
+      ...state.players,
+      [position]: updatedPlayer,
+    };
+
+    this.store.reset({
+      ...state,
+      players: nextPlayers,
+    });
+
+    // If this seat was currently taking a turn, switch from bot step to human turn timer immediately
+    if (state.currentPlayer === position) {
+      this.advanceTurnOrStepBot();
+    }
+
+    return true;
   }
 
   /**
@@ -285,6 +505,7 @@ export class AuthoritativeGameController {
   }
 
   public destroy(): void {
+    this.clearTurnTimer();
     if (this.botTimer) {
       clearTimeout(this.botTimer);
       this.botTimer = null;

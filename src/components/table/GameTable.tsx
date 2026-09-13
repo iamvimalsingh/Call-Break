@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
 import { Card } from '../../models/card';
+import { TurnTimerPayload } from '../../models/multiplayer';
 import { PlayerSlot } from './PlayerSlot';
 import { CenterPlayArea } from './CenterPlayArea';
 import { HumanHand } from './HumanHand';
@@ -25,6 +26,7 @@ export interface GameTableProps {
   onPlayCard: (card: Card) => void;
   onSubmitBid: (bid: number) => void;
   ruleCoachEnabled?: boolean;
+  turnTimer?: TurnTimerPayload | null;
 }
 
 export const GameTable: React.FC<GameTableProps> = ({
@@ -33,6 +35,7 @@ export const GameTable: React.FC<GameTableProps> = ({
   onPlayCard,
   onSubmitBid,
   ruleCoachEnabled = true,
+  turnTimer,
 }) => {
   const southPlayer = state.players[PlayerPosition.SOUTH];
   const northPlayer = state.players[PlayerPosition.NORTH];
@@ -90,6 +93,7 @@ export const GameTable: React.FC<GameTableProps> = ({
             player={northPlayer}
             position={PlayerPosition.NORTH}
             isCurrentTurn={state.currentPlayer === PlayerPosition.NORTH}
+            timer={turnTimer && turnTimer.position === PlayerPosition.NORTH ? turnTimer : null}
           />
         </div>
 
@@ -101,6 +105,7 @@ export const GameTable: React.FC<GameTableProps> = ({
               player={westPlayer}
               position={PlayerPosition.WEST}
               isCurrentTurn={state.currentPlayer === PlayerPosition.WEST}
+              timer={turnTimer && turnTimer.position === PlayerPosition.WEST ? turnTimer : null}
             />
           </div>
 
@@ -119,12 +124,13 @@ export const GameTable: React.FC<GameTableProps> = ({
               player={eastPlayer}
               position={PlayerPosition.EAST}
               isCurrentTurn={state.currentPlayer === PlayerPosition.EAST}
+              timer={turnTimer && turnTimer.position === PlayerPosition.EAST ? turnTimer : null}
             />
           </div>
         </div>
 
         {/* 3. South / Bidding Zone & 4. Human Hand Zone */}
-        <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-auto">
+        <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-auto overflow-visible">
           {/* Bidding Controls (when bidding phase is active) */}
           <AnimatePresence mode="wait">
             {isBiddingPhase && (
@@ -156,6 +162,7 @@ export const GameTable: React.FC<GameTableProps> = ({
               player={southPlayer}
               position={PlayerPosition.SOUTH}
               isCurrentTurn={state.currentPlayer === PlayerPosition.SOUTH}
+              timer={turnTimer && turnTimer.position === PlayerPosition.SOUTH ? turnTimer : null}
             />
           </div>
 

@@ -74,13 +74,13 @@ export const CardView: React.FC<CardViewProps> = ({
   const suitConfig = SUIT_CONFIG[card.suit];
   const isRed = card.suit === Suit.HEARTS || card.suit === Suit.DIAMONDS;
 
-  // Sizing definitions: responsive on narrow mobile (320px - 430px) through desktop
+  // Sizing definitions: authentic playing-card aspect ratio with legible mobile width
   const sizeClasses =
     size === 'sm'
       ? 'w-10 h-14 xs:w-11 xs:h-15 sm:w-13 sm:h-18 text-[10px] xs:text-[11px] sm:text-xs rounded-lg sm:rounded-xl p-1'
       : size === 'lg'
       ? 'w-20 h-28 sm:w-24 sm:h-34 md:w-28 md:h-40 text-base sm:text-lg rounded-2xl p-2 sm:p-2.5'
-      : 'w-[50px] h-[112px] xs:w-[56px] xs:h-[118px] sm:w-[62px] sm:h-[125px] md:w-[68px] md:h-[135px] text-xs sm:text-sm rounded-xl sm:rounded-2xl p-1 xs:p-1.5 sm:p-2';
+      : 'w-[54px] h-[86px] xs:w-[58px] xs:h-[92px] sm:w-[64px] sm:h-[100px] md:w-[72px] md:h-[112px] text-xs sm:text-sm rounded-xl sm:rounded-2xl p-1 xs:p-1.5 sm:p-2';
 
   // Playable, selected, inspectable, and disabled styling
   let interactiveClasses =
@@ -137,26 +137,30 @@ export const CardView: React.FC<CardViewProps> = ({
       aria-label={ariaLabel}
       aria-disabled={disabled || !isPlayable}
       whileHover={
-        !prefersReducedMotion && isPlayable && !disabled
+        !disableAnimation && !prefersReducedMotion && isPlayable && !disabled
           ? { y: isSelected ? -16 : -8, scale: 1.05, transition: transitions.springFast }
           : undefined
       }
       whileTap={
-        !prefersReducedMotion && isPlayable && !disabled
+        !disableAnimation && !prefersReducedMotion && isPlayable && !disabled
           ? { scale: 0.95, transition: transitions.springFast }
           : undefined
       }
-      animate={{
-        y: isSelected ? (prefersReducedMotion ? -6 : -12) : 0,
-        scale: isSelected ? 1.04 : 1,
-      }}
+      animate={
+        disableAnimation
+          ? undefined
+          : {
+              y: isSelected ? (prefersReducedMotion ? -6 : -12) : 0,
+              scale: isSelected ? 1.04 : 1,
+            }
+      }
       transition={prefersReducedMotion ? transitions.instant : transitions.springFast}
       className={`relative select-none flex flex-col justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-950 transition-shadow duration-150 shrink-0 ${sizeClasses} ${interactiveClasses} ${className}`}
     >
       {/* Top Corner: Rank & Suit (Strictly Right-Side Up) */}
-      <div className={`flex flex-col items-start leading-none font-bold font-sans ${textColor}`}>
-        <span className="tracking-tight font-black text-[1.1em]">{card.rank}</span>
-        <span className="text-[1.15em] leading-none mt-0.5">{suitConfig.symbol}</span>
+      <div className={`flex flex-col items-start leading-none font-bold font-sans select-none z-10 ${textColor}`}>
+        <span className="tracking-tighter font-black text-[1.1em] leading-none">{card.rank}</span>
+        <span className="text-[1.1em] leading-none mt-0.5 drop-shadow-2xs">{suitConfig.symbol}</span>
       </div>
 
       {/* Center Motif / Suit pip */}

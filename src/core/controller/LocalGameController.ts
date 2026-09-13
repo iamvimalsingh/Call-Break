@@ -29,6 +29,7 @@ export class LocalGameController implements IGameController {
   private botStrategies: Map<PlayerPosition, IBotStrategy> = new Map();
   private defaultBotStrategy: IBotStrategy = new MediumBotStrategy();
   private persistenceAdapter: IPersistenceAdapter | null = null;
+  private readonly rebidListeners: ((totalBids: number, message: string) => void)[] = [];
 
   constructor(
     store: IGameStateStore,
@@ -106,6 +107,17 @@ export class LocalGameController implements IGameController {
    */
   public bindPersistenceAdapter(adapter: IPersistenceAdapter): void {
     this.persistenceAdapter = adapter;
+  }
+
+  /**
+   * Subscribes to re-bid events triggered when sum(bids) <= 8.
+   */
+  public onRebid(listener: (totalBids: number, message: string) => void): () => void {
+    this.rebidListeners.push(listener);
+    return () => {
+      const idx = this.rebidListeners.indexOf(listener);
+      if (idx >= 0) this.rebidListeners.splice(idx, 1);
+    };
   }
 
   /**
@@ -187,8 +199,17 @@ export class LocalGameController implements IGameController {
     }
   }
 
-  public initMatch(mode: GameMode = GameMode.OFFLINE_BOTS): void {
-    const freshState = createInitialGameState(mode);
+  public initMatch(mode: GameMode = GameMode.OFFLINE_BOTS, enableRebiddingRule: boolean = false): void {
+    const rawState = createInitialGameState(mode);
+    const freshState: GameState = enableRebiddingRule
+      ? {
+          ...rawState,
+          config: {
+            ...rawState.config,
+            enableRebiddingRule: true,
+          },
+        }
+      : rawState;
     this.store.reset(freshState);
     this.persistState(freshState);
   }
@@ -196,8 +217,8 @@ export class LocalGameController implements IGameController {
   /**
    * Starts a completely fresh match and immediately initializes Round 1.
    */
-  public startNewMatch(mode: GameMode = GameMode.OFFLINE_BOTS): void {
-    this.initMatch(mode);
+  public startNewMatch(mode: GameMode = GameMode.OFFLINE_BOTS, enableRebiddingRule: boolean = false): void {
+    this.initMatch(mode, enableRebiddingRule);
     this.startRound();
   }
 
@@ -252,6 +273,37 @@ export class LocalGameController implements IGameController {
         type: 'BID_PLACED',
         payload: { playerPosition: position, bid },
       });
+
+      // Special Callbreak Rule: Check if all 4 bids are placed and sum(bids) <= 8
+      if (
+        nextState.config.enableRebiddingRule &&
+        this.rulesEngine.isRebidRequired &&
+        this.rulesEngine.isRebidRequired(nextState)
+      ) {
+        const totalBids = this.rulesEngine.getTotalBids(nextState);
+        const rebidMessage = `Total bids = ${totalBids} (≤ 8). Minimum bid total not reached. Re-bidding round!`;
+
+        if (this.cardEngine) {
+          const redealtState = this.rulesEngine.redealRound(nextState, this.cardEngine);
+          this.store.setState(() => redealtState, {
+            type: 'ROUND_STARTED',
+            payload: {
+              roundNumber: redealtState.currentRound,
+              dealer: redealtState.dealer,
+            },
+          });
+          this.persistState(redealtState);
+          for (const listener of this.rebidListeners) {
+            try {
+              listener(totalBids, rebidMessage);
+            } catch (err) {
+              console.error('Error in rebid listener:', err);
+            }
+          }
+          return true;
+        }
+      }
+
       this.persistState(nextState);
       return true;
     }

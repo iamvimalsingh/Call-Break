@@ -119,29 +119,42 @@ export const HumanHand: React.FC<HumanHandProps> = ({
 
   // Calculate dynamic card overlap based on available container width & remaining cards
   const n = cards.length;
+  const isMobile = containerWidth < 768;
   const isSmallScreen = containerWidth < 640;
   const isTablet = containerWidth >= 640 && containerWidth < 1024;
+
+  // Card dimensions: generous width on mobile so ranks and suits (A, K, Q, J, 10...) are crisp, bold, and easily readable
   const cardWidth =
     containerWidth < 360
-      ? 50
-      : containerWidth < 414
       ? 54
-      : isSmallScreen
+      : containerWidth < 414
       ? 58
+      : isSmallScreen
+      ? 62
       : isTablet
-      ? 64
-      : 70;
-  const availWidth = Math.max(280, containerWidth - (isSmallScreen ? 10 : 28));
+      ? 68
+      : 74;
+
+  // Horizontal breathing room on mobile to ensure fanned edge cards never get cut off by screen boundaries
+  const sideSafety = isMobile ? (n > 8 ? 24 : 16) : (isSmallScreen ? 14 : 20);
+  const availWidth = Math.max(260, containerWidth - sideSafety * 2);
+
+  // Minimum exposed width on the left of each card so the rank number (especially "10", "Q", "K", "A") and suit are 100% visible
+  const minVisibleStep = isMobile ? (containerWidth < 380 ? 21 : 23) : 24;
 
   let overlapPx = 18;
   if (n > 1) {
-    const maxStep = isSmallScreen ? cardWidth - 10 : cardWidth - 16;
+    const maxStep = cardWidth - minVisibleStep;
     const targetStep = (availWidth - cardWidth) / (n - 1);
     const step = Math.min(maxStep, targetStep);
-    overlapPx = Math.max(6, cardWidth - step);
+    overlapPx = Math.max(4, cardWidth - step);
   } else {
     overlapPx = 0;
   }
+
+  // Radial fan calculations on mobile (< 768px): exactly -13deg on leftmost to +13deg on rightmost
+  const M = n > 0 ? (n - 1) / 2 : 0;
+  const maxRotation = 13;
 
   return (
     <div className="w-full flex flex-col items-center select-none overflow-visible">
@@ -186,13 +199,31 @@ export const HumanHand: React.FC<HumanHandProps> = ({
       <div
         id="zone-hand"
         ref={containerRef}
-        className="w-full max-w-4xl px-0.5 sm:px-2 pt-0.5 sm:pt-1.5 pb-0.5 flex justify-center items-end overflow-visible"
+        className="w-full max-w-4xl px-0.5 sm:px-2 pt-6 pb-2 flex justify-center items-end overflow-visible"
       >
         <div className="flex items-end justify-center py-0.5 overflow-visible">
           <AnimatePresence mode="popLayout">
             {cards.map((card, index) => {
               const isLegal = isTurn && !isBidding && legalMoves.some((legal) => legal.id === card.id);
               const isSelected = selectedCard ? selectedCard.id === card.id : false;
+
+              // Compute mathematical radial fan arc (-13deg on left to +13deg on right)
+              const diff = index - M;
+              const normalizedDiff = M > 0 ? diff / M : 0;
+              let rotation = 0;
+              let arcY = 0;
+
+              if (isMobile && n > 1) {
+                rotation = normalizedDiff * maxRotation;
+
+                // Parabolic vertical offset: center cards sit elevated, edge cards sit 4-8px lower
+                const curve = normalizedDiff * normalizedDiff;
+                const maxArcDrop = n > 8 ? 7 : n > 4 ? 5 : 3;
+                arcY = curve * maxArcDrop;
+              }
+
+              // Selected card: lifts straight up by -22px cleanly without clipping or rotation jitter
+              const targetY = isSelected ? arcY - 22 : arcY;
 
               return (
                 <motion.div
@@ -205,9 +236,9 @@ export const HumanHand: React.FC<HumanHandProps> = ({
                   }
                   animate={{
                     opacity: 1,
-                    y: 0,
-                    rotate: 0,
-                    scale: 1,
+                    y: targetY,
+                    rotate: rotation,
+                    scale: isSelected ? 1.06 : 1,
                   }}
                   exit={
                     prefersReducedMotion
@@ -225,7 +256,7 @@ export const HumanHand: React.FC<HumanHandProps> = ({
                   className="relative transition-transform duration-150 shrink-0"
                   style={{
                     marginLeft: index === 0 ? 0 : -Math.round(overlapPx),
-                    zIndex: isSelected ? 40 : index + 1,
+                    zIndex: isSelected ? 50 : index + 1,
                     transformOrigin: 'bottom center',
                   }}
                 >
@@ -236,6 +267,7 @@ export const HumanHand: React.FC<HumanHandProps> = ({
                     isInspectable={isBidding || !isTurn}
                     disabled={isTurn && !isLegal}
                     size="md"
+                    disableAnimation={isMobile}
                     onClick={() => handleCardClick(card)}
                   />
                 </motion.div>

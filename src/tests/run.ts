@@ -10,6 +10,12 @@ async function main() {
   console.log(`========================================\n`);
 
   if (summary.failed > 0) {
+    console.log('FAILED TESTS:');
+    for (const r of summary.results) {
+      if (r.status === 'FAILED') {
+        console.log(`- [${r.category}] ${r.description}: ${r.error}`);
+      }
+    }
     process.exit(1);
   }
 }
