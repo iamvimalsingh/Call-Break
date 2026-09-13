@@ -7,6 +7,7 @@
 import { TestHarness } from './testHarness';
 import fs from 'fs';
 import path from 'path';
+import { cleanAndSanitizeWebSocketUrl } from '../services/multiplayer/MultiplayerClient';
 
 export function buildPhase14NetlifyPWATestSuite(): TestHarness {
   const harness = new TestHarness();
@@ -105,6 +106,42 @@ export function buildPhase14NetlifyPWATestSuite(): TestHarness {
       if (!key || key.length === 0) {
         throw new Error('Storage key contract missing');
       }
+    }
+  });
+
+  harness.register('Phase 14 WebSocket Sanitization', 'Strips markdown brackets, parentheses and duplicate URLs correctly', () => {
+    // Case 1: Markdown link syntax with duplicate URL
+    const markdownUrl = '[https://call-break-778p.onrender.com](https://call-break-778p.onrender.com)';
+    const res1 = cleanAndSanitizeWebSocketUrl(markdownUrl);
+    if (res1 !== 'wss://call-break-778p.onrender.com/ws') {
+      throw new Error(`Expected wss://call-break-778p.onrender.com/ws, got: ${res1}`);
+    }
+
+    // Case 2: Parentheses and brackets
+    const bracketUrl = '[(https://call-break-778p.onrender.com)]';
+    const res2 = cleanAndSanitizeWebSocketUrl(bracketUrl);
+    if (res2 !== 'wss://call-break-778p.onrender.com/ws') {
+      throw new Error(`Expected wss://call-break-778p.onrender.com/ws, got: ${res2}`);
+    }
+
+    // Case 3: Raw domain without protocol
+    const domainOnly = 'call-break-778p.onrender.com';
+    const res3 = cleanAndSanitizeWebSocketUrl(domainOnly);
+    if (res3 !== 'wss://call-break-778p.onrender.com/ws') {
+      throw new Error(`Expected wss://call-break-778p.onrender.com/ws, got: ${res3}`);
+    }
+
+    // Case 4: Standard HTTPS URL with trailing slash
+    const httpsUrl = 'https://call-break-778p.onrender.com/';
+    const res4 = cleanAndSanitizeWebSocketUrl(httpsUrl);
+    if (res4 !== 'wss://call-break-778p.onrender.com/ws') {
+      throw new Error(`Expected wss://call-break-778p.onrender.com/ws, got: ${res4}`);
+    }
+
+    // Case 5: Safe fallback on malformed or empty
+    const res5 = cleanAndSanitizeWebSocketUrl('');
+    if (!res5.includes('/ws')) {
+      throw new Error(`Expected fallback to include /ws, got: ${res5}`);
     }
   });
 

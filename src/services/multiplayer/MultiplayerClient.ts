@@ -20,6 +20,69 @@ export type ErrorListener = (error: { message: string; code?: string }) => void;
 export type GameStartedListener = (roomCode: string) => void;
 export type ConnectionStateListener = (state: ConnectionState, error: string | null) => void;
 
+/**
+ * Cleans and sanitizes WebSocket URLs by stripping markdown brackets, parentheses,
+ * duplicate URLs, and extracting pure domains.
+ *
+ * Example: "[https://call-break-778p.onrender.com](https://call-break-778p.onrender.com)"
+ * resolves cleanly to "wss://call-break-778p.onrender.com/ws".
+ */
+export function cleanAndSanitizeWebSocketUrl(rawUrl?: string): string {
+  const defaultFallback = 'wss://call-break-778p.onrender.com/ws';
+
+  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+      try {
+        return window.location.origin.replace(/^http/, 'ws') + '/ws';
+      } catch {
+        return defaultFallback;
+      }
+    }
+    return defaultFallback;
+  }
+
+  try {
+    let input = rawUrl.trim();
+
+    // 1. Strip markdown link syntax: [text](url) -> extract url
+    const mdMatch = input.match(/\[([^\]]*)\]\(([^)]+)\)/);
+    if (mdMatch) {
+      input = mdMatch[2].trim() || mdMatch[1].trim();
+    }
+
+    // 2. Strip any lingering brackets, parentheses, angle brackets, quotes, backticks
+    input = input.replace(/[\[\]\(\)\<\>"`']/g, '').trim();
+
+    // 3. Extract the first valid URL token if duplicate or concatenated
+    const urlMatch = input.match(/(?:https?|wss?):\/\/[^\s\/$.?#].[^\s]*/i);
+    if (urlMatch) {
+      input = urlMatch[0].trim();
+    }
+
+    // 4. Extract pure domain
+    let cleaned = input.replace(/^(?:https?|wss?):\/\//i, '').trim();
+    cleaned = cleaned.replace(/^\/+/, '');
+    const pathIndex = cleaned.indexOf('/');
+    const domain = (pathIndex !== -1 ? cleaned.substring(0, pathIndex) : cleaned).trim();
+
+    if (!domain) {
+      return defaultFallback;
+    }
+
+    // Special case for CallBreak Render backend host
+    if (domain.includes('call-break-778p')) {
+      return 'wss://call-break-778p.onrender.com/ws';
+    }
+
+    const isLocal = domain.includes('localhost') || domain.includes('127.0.0.1');
+    const scheme = isLocal ? 'ws://' : 'wss://';
+    return `${scheme}${domain}/ws`;
+  } catch (err) {
+    console.error('[WebSocket] Error sanitizing URL, falling back safely to default:', err);
+    return defaultFallback;
+  }
+}
+
 export class MultiplayerClient {
   private static instance: MultiplayerClient | null = null;
   private socket: WebSocket | null = null;
@@ -102,22 +165,8 @@ export class MultiplayerClient {
 
     return new Promise((resolve, reject) => {
       try {
-        let wsUrl = import.meta.env.VITE_WS_URL;
-        if (wsUrl && typeof wsUrl === 'string' && wsUrl.trim().length > 0) {
-          wsUrl = wsUrl.trim();
-          if (wsUrl.startsWith('https://')) {
-            wsUrl = 'wss://' + wsUrl.slice('https://'.length);
-          } else if (wsUrl.startsWith('http://')) {
-            wsUrl = 'ws://' + wsUrl.slice('http://'.length);
-          }
-          if (!wsUrl.includes('/ws')) {
-            wsUrl = wsUrl.replace(/\/+$/, '') + '/ws';
-          }
-        } else if (typeof window !== 'undefined' && window.location) {
-          wsUrl = window.location.origin.replace(/^http/, 'ws') + '/ws';
-        } else {
-          wsUrl = 'ws://localhost:3000/ws';
-        }
+        const rawWsUrl = import.meta.env.VITE_WS_URL;
+        const wsUrl = cleanAndSanitizeWebSocketUrl(rawWsUrl);
 
         console.log(`[WebSocket] Connecting to CallBreak multiplayer server at: ${wsUrl}`);
         const ws = new WebSocket(wsUrl);
