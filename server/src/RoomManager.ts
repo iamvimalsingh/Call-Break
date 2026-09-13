@@ -169,7 +169,11 @@ export class GameRoom {
 
     this.status = 'PLAYING';
 
-    // Broadcast GAME_STARTED and updated room state
+    // Broadcast MATCH_STARTED and GAME_STARTED and updated room state
+    this.broadcast({
+      type: 'MATCH_STARTED',
+      payload: { roomCode: this.roomCode },
+    });
     this.broadcast({
       type: 'GAME_STARTED',
       payload: { roomCode: this.roomCode },

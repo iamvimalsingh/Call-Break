@@ -5,7 +5,7 @@
  * and joining rooms (code input, clipboard paste, real-time waiting lobby).
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   PlusCircle,
@@ -23,12 +23,13 @@ import {
   ClipboardPaste,
   Loader2,
   LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
 import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
-import { RoomParticipant, RoomState } from '../../models/multiplayer';
+import { ConnectionState, RoomParticipant, RoomState } from '../../models/multiplayer';
 import { PlayerPosition } from '../../models/player';
 
 export interface RoomLobbyModalProps {
@@ -65,6 +66,18 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   const [isJoining, setIsJoining] = useState(false);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(() =>
+    sharedMultiplayerClient.getConnectionState()
+  );
+  const [connectionError, setConnectionError] = useState<string | null>(() =>
+    sharedMultiplayerClient.getConnectionError()
+  );
+
+  const autoFillBotsRef = useRef(autoFillBots);
+  autoFillBotsRef.current = autoFillBots;
+
+  const onStartRoomMatchRef = useRef(onStartRoomMatch);
+  onStartRoomMatchRef.current = onStartRoomMatch;
 
   // Connect to WebSocket server on modal open
   useEffect(() => {
@@ -78,6 +91,14 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       console.error('Failed to connect to multiplayer server:', err);
     });
 
+    const unsubConn = sharedMultiplayerClient.onConnectionState((state, err) => {
+      setConnectionState(state);
+      setConnectionError(err);
+      if (state === 'OPEN') {
+        setJoinError(null);
+      }
+    });
+
     const unsubRoom = sharedMultiplayerClient.onRoomState((state) => {
       setRoomState(state);
       setRoomCode(state.roomCode);
@@ -85,8 +106,11 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
     const unsubGameStarted = sharedMultiplayerClient.onGameStarted((code) => {
       soundManager.play('deal');
-      const isHost = roomState?.hostId === roomState?.myClientId;
-      onStartRoomMatch(code, isHost, autoFillBots);
+      const latestRoom = sharedMultiplayerClient.getRoomState();
+      const isHostNow =
+        activeTab === 'create' ||
+        (latestRoom ? latestRoom.hostId === latestRoom.myClientId : true);
+      onStartRoomMatchRef.current(code, isHostNow, autoFillBotsRef.current);
     });
 
     const unsubError = sharedMultiplayerClient.onError((err) => {
@@ -96,11 +120,12 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     });
 
     return () => {
+      unsubConn();
       unsubRoom();
       unsubGameStarted();
       unsubError();
     };
-  }, [isOpen, onStartRoomMatch, roomState?.hostId, roomState?.myClientId, autoFillBots]);
+  }, [isOpen, activeTab]);
 
   // Handle Tab Switch & Host Room Creation
   useEffect(() => {
@@ -109,7 +134,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     if (activeTab === 'create' && !hasJoinedRoom) {
       sharedMultiplayerClient.createRoom('Host Player (You)', roomCode);
     }
-  }, [isOpen, activeTab, roomCode, hasJoinedRoom]);
+  }, [isOpen, activeTab, roomCode, hasJoinedRoom, connectionState]);
 
   // Sync initial props
   useEffect(() => {
@@ -130,6 +155,21 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   const joinLink = `${currentUrl}?room=${roomCode}`;
   const inviteMessage = `Let's play Call Break together! Tap the link to join my table: ${joinLink} (Room Code: ${roomCode})`;
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(inviteMessage)}`;
+
+  const handleRetryConnection = () => {
+    soundManager.play('click');
+    setJoinError(null);
+    sharedMultiplayerClient
+      .connect()
+      .then(() => {
+        if (activeTab === 'create') {
+          sharedMultiplayerClient.createRoom('Host Player (You)', roomCode);
+        }
+      })
+      .catch((err) => {
+        console.error('Retry connection error:', err);
+      });
+  };
 
   const handleCopyCode = async () => {
     try {
@@ -184,7 +224,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
   const handleStartCreatedRoom = () => {
     soundManager.play('deal');
-    sharedMultiplayerClient.startGame(autoFillBots);
+    sharedMultiplayerClient.startMatch(autoFillBots);
   };
 
   const handleLeaveLobby = () => {
@@ -206,7 +246,12 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   const eastPlayer = getPlayerAtPosition(PlayerPosition.EAST);
 
   const totalConnected = roomState?.players.length ?? 1;
-  const isHost = roomState ? roomState.hostId === roomState.myClientId : activeTab === 'create';
+  const isHost =
+    activeTab === 'create' ||
+    (roomState
+      ? roomState.hostId === roomState.myClientId ||
+        roomState.players.find((p) => p.id === roomState.myClientId)?.isHost === true
+      : false);
 
   return (
     <AnimatePresence>
@@ -249,11 +294,40 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
               <span>{hasJoinedRoom ? 'Leave Room' : 'Game Modes'}</span>
             </button>
 
+            {/* Real Connection State Badge */}
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-400 font-mono text-[11px] font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Multiplayer Live</span>
-              </span>
+              {connectionState === 'OPEN' && (
+                <span
+                  id="status-badge-connected"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-400 font-mono text-[11px] font-bold"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Connected to Server</span>
+                </span>
+              )}
+
+              {connectionState === 'CONNECTING' && (
+                <span
+                  id="status-badge-connecting"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-700/60 text-amber-300 font-mono text-[11px] font-bold"
+                >
+                  <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+                  <span>Connecting to server...</span>
+                </span>
+              )}
+
+              {(connectionState === 'CLOSED' || connectionState === 'ERROR') && (
+                <button
+                  type="button"
+                  id="status-badge-disconnected"
+                  onClick={handleRetryConnection}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/80 hover:bg-rose-900/80 border border-rose-700/60 text-rose-300 font-mono text-[11px] font-bold cursor-pointer transition-colors"
+                  title="Click to reconnect"
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <span>Server Disconnected / Offline</span>
+                </button>
+              )}
             </div>
 
             <button
@@ -269,6 +343,32 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Offline / Disconnected Notice Banner */}
+          {(connectionState === 'CLOSED' || connectionState === 'ERROR') && (
+            <div
+              id="banner-server-offline"
+              className="mb-4 p-3 rounded-2xl bg-rose-950/60 border border-rose-800/80 flex items-center justify-between gap-3 text-rose-200 text-xs shadow-lg shadow-rose-950/40"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-bold text-rose-100">Server Disconnected / Offline</div>
+                  <div className="text-[11px] text-rose-300 truncate">
+                    {connectionError || 'Cannot connect to multiplayer WebSocket server.'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="btn-retry-websocket"
+                onClick={handleRetryConnection}
+                className="px-3 py-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white font-bold text-xs shrink-0 cursor-pointer transition-colors shadow-sm"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
           {/* Tab Selection (only when not inside joined room) */}
           {!hasJoinedRoom && (
@@ -500,15 +600,19 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                   type="button"
                   id="btn-start-created-table"
                   onClick={handleStartCreatedRoom}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all cursor-pointer"
+                  disabled={connectionState !== 'OPEN'}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Play className="w-4 h-4 fill-current text-white" />
-                  <span>Start Match at Private Table</span>
+                  <span>▶ Start Game (Fill with Bots)</span>
                 </button>
               ) : (
-                <div className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center gap-2 text-stone-300 text-xs font-semibold">
+                <div
+                  id="banner-guest-waiting"
+                  className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center gap-2 text-stone-300 text-xs font-semibold"
+                >
                   <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-                  <span>Waiting for room host to start match...</span>
+                  <span>Waiting for host to start...</span>
                 </div>
               )}
             </div>

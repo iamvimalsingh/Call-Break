@@ -96,6 +96,7 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             break;
           }
 
+          case 'START_MATCH':
           case 'START_GAME': {
             const room = roomManager.getRoomByClientId(clientId);
             if (!room) {

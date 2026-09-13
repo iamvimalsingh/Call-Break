@@ -27,10 +27,13 @@ export interface RoomState {
   autoFillBots: boolean;
 }
 
+export type ConnectionState = 'CONNECTING' | 'OPEN' | 'CLOSED' | 'ERROR';
+
 export type ClientMessage =
   | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string } }
   | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string } }
-  | { type: 'START_GAME'; payload: { autoFillBots?: boolean } }
+  | { type: 'START_MATCH'; payload?: { autoFillBots?: boolean } }
+  | { type: 'START_GAME'; payload?: { autoFillBots?: boolean } }
   | { type: 'SUBMIT_BID'; payload: { bid: number } }
   | { type: 'PLAY_CARD'; payload: { card: Card } }
   | { type: 'NEXT_ROUND' }
@@ -39,6 +42,7 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { type: 'ROOM_STATE'; payload: RoomState }
+  | { type: 'MATCH_STARTED'; payload: { roomCode: string } }
   | { type: 'GAME_STARTED'; payload: { roomCode: string } }
   | { type: 'GAME_STATE'; payload: { state: GameState; myPosition: PlayerPosition; rawPosition: PlayerPosition } }
   | { type: 'GAME_EVENT'; payload: GameEvent }

@@ -7,7 +7,7 @@ import { Card } from '../../models/card';
 import { GameEvent } from '../../models/events';
 import { GameState } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
-import { ClientMessage, RoomState, ServerMessage } from '../../models/multiplayer';
+import { ClientMessage, ConnectionState, RoomState, ServerMessage } from '../../models/multiplayer';
 
 export type RoomStateListener = (roomState: RoomState) => void;
 export type GameStateListener = (data: {
@@ -18,6 +18,7 @@ export type GameStateListener = (data: {
 export type GameEventListener = (event: GameEvent) => void;
 export type ErrorListener = (error: { message: string; code?: string }) => void;
 export type GameStartedListener = (roomCode: string) => void;
+export type ConnectionStateListener = (state: ConnectionState, error: string | null) => void;
 
 export class MultiplayerClient {
   private static instance: MultiplayerClient | null = null;
@@ -25,6 +26,10 @@ export class MultiplayerClient {
   private currentRoomState: RoomState | null = null;
   private isConnecting: boolean = false;
   private pendingQueue: ClientMessage[] = [];
+
+  private connectionState: ConnectionState = 'CLOSED';
+  private connectionError: string | null = null;
+  private connectionStateListeners: Set<ConnectionStateListener> = new Set();
 
   private roomStateListeners: Set<RoomStateListener> = new Set();
   private gameStateListeners: Set<GameStateListener> = new Set();
@@ -43,12 +48,38 @@ export class MultiplayerClient {
     return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
   }
 
+  public getConnectionState(): ConnectionState {
+    if (this.socket) {
+      if (this.socket.readyState === WebSocket.OPEN) return 'OPEN';
+      if (this.socket.readyState === WebSocket.CONNECTING) return 'CONNECTING';
+      if (this.socket.readyState === WebSocket.CLOSING || this.socket.readyState === WebSocket.CLOSED) return 'CLOSED';
+    }
+    return this.connectionState;
+  }
+
+  public getConnectionError(): string | null {
+    return this.connectionError;
+  }
+
+  public onConnectionState(listener: ConnectionStateListener): () => void {
+    this.connectionStateListeners.add(listener);
+    listener(this.getConnectionState(), this.connectionError);
+    return () => this.connectionStateListeners.delete(listener);
+  }
+
+  private setConnectionState(state: ConnectionState, error: string | null = null): void {
+    this.connectionState = state;
+    this.connectionError = error;
+    this.connectionStateListeners.forEach((fn) => fn(state, error));
+  }
+
   public getRoomState(): RoomState | null {
     return this.currentRoomState;
   }
 
   public connect(): Promise<void> {
     if (this.isConnected()) {
+      this.setConnectionState('OPEN', null);
       return Promise.resolve();
     }
 
@@ -58,49 +89,46 @@ export class MultiplayerClient {
           if (this.isConnected()) {
             clearInterval(check);
             resolve();
+          } else if (this.connectionState === 'ERROR' || this.connectionState === 'CLOSED') {
+            clearInterval(check);
+            resolve();
           }
         }, 50);
       });
     }
 
     this.isConnecting = true;
+    this.setConnectionState('CONNECTING', null);
 
     return new Promise((resolve, reject) => {
       try {
-        const defaultWsUrl =
-          (window.location.protocol === 'https:' ? 'wss://' : 'ws://') +
-          window.location.hostname +
-          ':3001';
-
-        let wsUrl = import.meta.env.VITE_WS_URL || defaultWsUrl;
-
-        // Auto-convert http/https prefix to ws/wss if provided from Render dashboard
-        if (wsUrl.startsWith('https://')) {
-          wsUrl = 'wss://' + wsUrl.slice('https://'.length);
-        } else if (wsUrl.startsWith('http://')) {
-          wsUrl = 'ws://' + wsUrl.slice('http://'.length);
+        let wsUrl = import.meta.env.VITE_WS_URL;
+        if (wsUrl && typeof wsUrl === 'string' && wsUrl.trim().length > 0) {
+          wsUrl = wsUrl.trim();
+          if (wsUrl.startsWith('https://')) {
+            wsUrl = 'wss://' + wsUrl.slice('https://'.length);
+          } else if (wsUrl.startsWith('http://')) {
+            wsUrl = 'ws://' + wsUrl.slice('http://'.length);
+          }
+          if (!wsUrl.includes('/ws')) {
+            wsUrl = wsUrl.replace(/\/+$/, '') + '/ws';
+          }
+        } else if (typeof window !== 'undefined' && window.location) {
+          wsUrl = window.location.origin.replace(/^http/, 'ws') + '/ws';
+        } else {
+          wsUrl = 'ws://localhost:3000/ws';
         }
 
-        // In AI Studio / Cloud Run dev container preview without VITE_WS_URL,
-        // external port 3001 is not accessible through Cloud Run reverse proxy.
-        // Fall back to same-origin /ws so the in-browser preview works seamlessly.
-        if (
-          !import.meta.env.VITE_WS_URL &&
-          typeof window !== 'undefined' &&
-          (window.location.hostname.includes('run.app') ||
-            window.location.hostname.includes('ai.studio') ||
-            window.location.port === '3000')
-        ) {
-          wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-        }
-
-        console.log(`[WebSocket] Connecting to CallBreak multiplayer server at ${wsUrl}`);
+        console.log(`[WebSocket] Connecting to CallBreak multiplayer server at: ${wsUrl}`);
         const ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => {
+        ws.onopen = (event) => {
+          console.log(`[WebSocket] onopen: Connected successfully to ${wsUrl}`, event);
           this.socket = ws;
           this.isConnecting = false;
-          // Flush pending
+          this.setConnectionState('OPEN', null);
+
+          // Flush pending queue
           while (this.pendingQueue.length > 0) {
             const msg = this.pendingQueue.shift();
             if (msg) this.send(msg);
@@ -109,21 +137,40 @@ export class MultiplayerClient {
         };
 
         ws.onmessage = (event) => {
+          console.log(
+            '[WebSocket] onmessage: received',
+            typeof event.data === 'string' ? event.data.slice(0, 120) : event.data
+          );
           this.handleServerMessage(event.data);
         };
 
-        ws.onclose = () => {
-          this.socket = null;
-          this.isConnecting = false;
-        };
-
         ws.onerror = (err) => {
+          const errMsg = `WebSocket connection error on ${wsUrl}`;
+          console.error('[WebSocket] onerror:', errMsg, err);
           this.socket = null;
           this.isConnecting = false;
+          this.setConnectionState('ERROR', errMsg);
           reject(err);
         };
-      } catch (err) {
+
+        ws.onclose = (event) => {
+          const reason =
+            event.reason ||
+            (event.code === 1000
+              ? 'Connection closed normally'
+              : `Server connection closed (code: ${event.code})`);
+          console.warn(`[WebSocket] onclose: code=${event.code}, reason=${event.reason || 'none'}`);
+          this.socket = null;
+          this.isConnecting = false;
+          if (this.connectionState !== 'ERROR') {
+            this.setConnectionState('CLOSED', reason);
+          }
+        };
+      } catch (err: any) {
         this.isConnecting = false;
+        const msg = err?.message || 'Failed to initialize WebSocket';
+        console.error('[WebSocket] exception during connect():', err);
+        this.setConnectionState('ERROR', msg);
         reject(err);
       }
     });
@@ -132,10 +179,11 @@ export class MultiplayerClient {
   public disconnect(): void {
     if (this.socket) {
       this.send({ type: 'LEAVE_ROOM' });
-      this.socket.close();
+      this.socket.close(1000, 'User left room');
       this.socket = null;
     }
     this.currentRoomState = null;
+    this.setConnectionState('CLOSED', null);
   }
 
   private send(message: ClientMessage): void {
@@ -151,7 +199,9 @@ export class MultiplayerClient {
 
   private handleServerMessage(data: string | ArrayBuffer): void {
     try {
-      const msg = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data)) as ServerMessage;
+      const msg = JSON.parse(
+        typeof data === 'string' ? data : new TextDecoder().decode(data)
+      ) as ServerMessage;
 
       switch (msg.type) {
         case 'ROOM_STATE':
@@ -159,6 +209,7 @@ export class MultiplayerClient {
           this.roomStateListeners.forEach((fn) => fn(msg.payload));
           break;
 
+        case 'MATCH_STARTED':
         case 'GAME_STARTED':
           this.gameStartedListeners.forEach((fn) => fn(msg.payload.roomCode));
           break;
@@ -198,11 +249,15 @@ export class MultiplayerClient {
     });
   }
 
-  public startGame(autoFillBots: boolean = true): void {
+  public startMatch(autoFillBots: boolean = true): void {
     this.send({
-      type: 'START_GAME',
+      type: 'START_MATCH',
       payload: { autoFillBots },
     });
+  }
+
+  public startGame(autoFillBots: boolean = true): void {
+    this.startMatch(autoFillBots);
   }
 
   public submitBid(bid: number): void {
