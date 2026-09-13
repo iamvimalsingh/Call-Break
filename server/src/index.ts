@@ -22,12 +22,17 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
   server.on('upgrade', (request, socket, head) => {
     // Never intercept Vite HMR upgrades or Vite dev server internals
     const protocol = request.headers['sec-websocket-protocol'];
-    if (protocol && protocol.includes('vite-hmr')) {
+    if (protocol && protocol.includes('vite')) {
       return;
     }
 
     const pathname = request.url ? new URL(request.url, 'http://localhost').pathname : '/';
     if (pathname.startsWith('/@vite') || pathname.startsWith('/__vite')) {
+      return;
+    }
+
+    // Never intercept Vite HMR token requests
+    if (request.url && request.url.includes('token=')) {
       return;
     }
 

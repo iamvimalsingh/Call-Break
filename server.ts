@@ -7,7 +7,7 @@ import { setupWebSocketServer } from "./server/src/index";
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   app.use(express.json());
 
@@ -26,11 +26,10 @@ async function startServer() {
 
   // Vite middleware for development vs static dist for production
   if (process.env.NODE_ENV !== "production") {
-    const isHmrDisabled = process.env.DISABLE_HMR === "true";
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: isHmrDisabled ? false : { server },
+        hmr: { server },
       },
       appType: "spa",
     });
