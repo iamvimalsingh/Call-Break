@@ -1,0 +1,6 @@
+{
+  "name": "Call Break / Lakdi",
+  "description": "A standalone, professional Call Break (Lakdi) card game architecture and web application.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

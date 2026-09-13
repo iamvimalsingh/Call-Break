@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="feltBgFull" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#064e3b" />
+      <stop offset="60%" stop-color="#022c22" />
+      <stop offset="100%" stop-color="#02140f" />
+    </radialGradient>
+    <linearGradient id="goldSpadeMask" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fef9c3" />
+      <stop offset="35%" stop-color="#facc15" />
+      <stop offset="75%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#ca8a04" />
+    </linearGradient>
+    <filter id="dropShadowMask" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.65" />
+    </filter>
+  </defs>
+
+  <!-- Full-bleed background for maskable adaptive icons -->
+  <rect width="512" height="512" fill="url(#feltBgFull)" />
+
+  <!-- Inner safe-zone ring (safe zone is central 80%) -->
+  <circle cx="256" cy="256" r="185" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="8 6" opacity="0.3" />
+
+  <!-- Center Card Emblem scaled to safe zone -->
+  <g transform="translate(256, 240) scale(0.72) translate(-256, -260)" filter="url(#dropShadowMask)">
+    <!-- Spade Icon -->
+    <path
+      d="M256,96 C240,150 156,230 156,290 C156,334 190,364 232,364 C250,364 266,356 276,342 C266,380 248,406 220,422 L292,422 C264,406 246,380 236,342 C246,356 262,364 280,364 C322,364 356,334 356,290 C356,230 272,150 256,96 Z"
+      fill="url(#goldSpadeMask)"
+    />
+    <circle cx="256" cy="140" r="7" fill="#fef08a" opacity="0.95" />
+    <circle cx="178" cy="275" r="5" fill="#fef08a" opacity="0.8" />
+    <circle cx="334" cy="275" r="5" fill="#fef08a" opacity="0.8" />
+  </g>
+
+  <!-- Lakdi / Call Break Emblem Text in Safe Zone -->
+  <text x="256" y="415" text-anchor="middle" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="900" font-size="24" letter-spacing="4" fill="#fde047" opacity="0.95">CALL BREAK</text>
+</svg>

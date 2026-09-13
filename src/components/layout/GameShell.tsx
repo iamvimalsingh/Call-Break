@@ -1,0 +1,733 @@
+/**
+ * Application Game Shell Component
+ * Master coordinator for Phase 6 Interactive Game Table & Playable Offline Game.
+ * Subscribes to shared state, coordinates LocalGameController,
+ * manages bot turn presentation timing, and controls HUD/Modal interactions.
+ * Phase 6 Game Table & Playable Offline Game
+ */
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { GameMode, GameState, GameStatus } from '../../models/gameState';
+import { PlayerPosition } from '../../models/player';
+import { Card } from '../../models/card';
+import { sharedGameStore } from '../../core/state/gameStore';
+import { LocalGameController } from '../../core/controller/LocalGameController';
+import { CardEngine } from '../../core/deck/CardEngine';
+import { CallBreakRulesEngine } from '../../core/rules/CallBreakRulesEngine';
+import { ScoringEngine } from '../../core/scoring/ScoringEngine';
+import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
+import { TableTopBar } from '../hud/TableTopBar';
+import { GameTable } from '../table/GameTable';
+import { ScoreBoardModal } from '../hud/ScoreBoardModal';
+import { ArchitectureInspector } from '../hud/ArchitectureInspector';
+import { RoundSummaryModal } from '../hud/RoundSummaryModal';
+import { MatchResultModal } from '../hud/MatchResultModal';
+import { HomeLobbyModal } from '../hud/HomeLobbyModal';
+import { RulesModal } from '../hud/RulesModal';
+import { MatchHistoryModal } from '../history/MatchHistoryModal';
+import { PlayerStatisticsModal } from '../statistics/PlayerStatisticsModal';
+import { SettingsModal } from '../settings/SettingsModal';
+import { InteractiveTutorialModal } from '../tutorial/InteractiveTutorialModal';
+import { GameModeModal } from '../modals/GameModeModal';
+import { RoomLobbyModal } from '../modals/RoomLobbyModal';
+import { BotDifficulty } from '../../core/contracts/IBotStrategy';
+import { useSettings } from '../../core/settings/useSettings';
+import { sharedHistoryService } from '../../core/history/HistoryService';
+import { sharedActiveGameService } from '../../core/persistence/ActiveGameService';
+import { soundManager } from '../../core/sound/SoundManager';
+import { OfflineIndicator } from '../pwa/OfflineIndicator';
+import { Layers, Trophy, BookOpen, RotateCcw, ShieldCheck, Volume2, VolumeX, Settings, HelpCircle, BarChart2, History, Sparkles, Users } from 'lucide-react';
+import { useSound } from '../../core/sound/useSound';
+
+export const GameShell: React.FC = () => {
+  const [gameState, setGameState] = useState<GameState>(() => sharedGameStore.getState());
+  const [isScoreboardOpen, setIsScoreboardOpen] = useState(false);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
+  const [isHomeOpen, setIsHomeOpen] = useState(() => sharedGameStore.getState().status === GameStatus.IDLE);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isStatisticsOpen, setIsStatisticsOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [isFinalResultOpen, setIsFinalResultOpen] = useState(false);
+  const [isGameModeOpen, setIsGameModeOpen] = useState(false);
+  const [isRoomLobbyOpen, setIsRoomLobbyOpen] = useState(false);
+  const [roomLobbyTab, setRoomLobbyTab] = useState<'create' | 'join'>('create');
+  const [prefilledRoomCode, setPrefilledRoomCode] = useState<string>('');
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>(BotDifficulty.MEDIUM);
+  const [hasSavedGame, setHasSavedGame] = useState(false);
+  const [savedGameRound, setSavedGameRound] = useState<number | undefined>(undefined);
+
+  const { settings } = useSettings();
+  const { isMuted, toggleMute } = useSound();
+
+  // Initialize Controller with Card Engine, Rules Engine, and Scoring Engine
+  const [controller] = useState(
+    () =>
+      new LocalGameController(sharedGameStore, {
+        cardEngine: new CardEngine(),
+        rulesEngine: new CallBreakRulesEngine(),
+        scoringEngine: new ScoringEngine(),
+      })
+  );
+
+  // Subscribe to centralized state store
+  useEffect(() => {
+    const unsubscribe = sharedGameStore.subscribe((nextState) => {
+      setGameState(nextState);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Browser Autoplay Policy Safe Audio Unlocking on first user gesture
+  useEffect(() => {
+    const handleFirstGesture = () => {
+      soundManager.unlockAudio();
+    };
+
+    window.addEventListener('click', handleFirstGesture, { once: true });
+    window.addEventListener('touchstart', handleFirstGesture, { once: true });
+    window.addEventListener('keydown', handleFirstGesture, { once: true });
+
+    return () => {
+      window.removeEventListener('click', handleFirstGesture);
+      window.removeEventListener('touchstart', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+    };
+  }, []);
+
+  // Deep-linking URL parameter detection (?room=CODE or ?r=CODE)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const roomParam = urlParams.get('room') || urlParams.get('r');
+      if (roomParam) {
+        const cleanCode = roomParam.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        setPrefilledRoomCode(cleanCode);
+        setRoomLobbyTab('join');
+        setIsRoomLobbyOpen(true);
+        setIsHomeOpen(false);
+      }
+    }
+  }, []);
+
+  // Subscribe to real-time multiplayer server events
+  useEffect(() => {
+    const unsubState = sharedMultiplayerClient.onGameState(({ state }) => {
+      sharedGameStore.setState(() => state);
+    });
+
+    const unsubEvent = sharedMultiplayerClient.onGameEvent((event) => {
+      if (event.type === 'CARD_PLAYED') {
+        soundManager.play('cardPlay');
+      } else if (event.type === 'TRICK_COMPLETED') {
+        soundManager.play('trickWon');
+      } else if (event.type === 'ROUND_COMPLETED') {
+        soundManager.play('roundEnd');
+      } else if (event.type === 'MATCH_COMPLETED') {
+        soundManager.play('matchEnd');
+      } else if (event.type === 'CARDS_DEALT') {
+        soundManager.play('deal');
+      }
+    });
+
+    return () => {
+      unsubState();
+      unsubEvent();
+    };
+  }, []);
+
+  // Compute legal moves for human player (South) using RulesEngine
+  const legalMoves = useMemo(() => {
+    if (gameState.status !== GameStatus.PLAYING || gameState.currentPlayer !== PlayerPosition.SOUTH) {
+      return [];
+    }
+    return controller.getLegalMovesForPlayer(PlayerPosition.SOUTH);
+  }, [gameState, controller]);
+
+  // Bot Turn Automation Loop with Natural Presentation Delay (Only for OFFLINE_BOTS)
+  useEffect(() => {
+    if (gameState.mode !== GameMode.OFFLINE_BOTS) {
+      return;
+    }
+
+    let timerId: NodeJS.Timeout | null = null;
+    const botBidDelay = settings.gameSpeed === 'fast' ? 200 : 550;
+    const botPlayDelay = settings.gameSpeed === 'fast' ? 250 : 650;
+
+    // 1. Bot Bidding Turn
+    if (gameState.status === GameStatus.BIDDING) {
+      if (controller.isBotPlayer(gameState.currentPlayer)) {
+        timerId = setTimeout(() => {
+          controller.stepBotTurn();
+        }, botBidDelay);
+      }
+    }
+
+    // 2. Bot Card Play Turn
+    else if (gameState.status === GameStatus.PLAYING) {
+      if (controller.isBotPlayer(gameState.currentPlayer)) {
+        timerId = setTimeout(() => {
+          controller.stepBotTurn();
+        }, botPlayDelay);
+      }
+    }
+
+    // 3. Round Ended Scoring Completion
+    else if (gameState.status === GameStatus.ROUND_ENDED) {
+      const alreadyScored = gameState.roundScores.some(
+        (r) => r.roundNumber === gameState.currentRound
+      );
+      if (!alreadyScored) {
+        controller.completeRound();
+      }
+    }
+
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
+  }, [
+    gameState.mode,
+    gameState.status,
+    gameState.currentPlayer,
+    gameState.currentRound,
+    gameState.currentTrick.cards.length,
+    gameState.roundScores.length,
+    controller,
+    settings.gameSpeed,
+  ]);
+
+  // Persistence & Active Match Synchronization
+  useEffect(() => {
+    if (gameState.status === GameStatus.MATCH_FINISHED && gameState.matchResult) {
+      sharedHistoryService.recordMatchFinished(gameState, PlayerPosition.SOUTH);
+      sharedActiveGameService.clearActiveGame();
+    } else if (gameState.status !== GameStatus.IDLE && gameState.mode === GameMode.OFFLINE_BOTS) {
+      sharedActiveGameService.saveActiveGame(gameState);
+    }
+  }, [gameState]);
+
+  // Check for saved in-progress match in storage
+  const checkSavedGame = useCallback(async () => {
+    const saved = await sharedActiveGameService.loadActiveGame();
+    if (saved) {
+      setHasSavedGame(true);
+      setSavedGameRound(saved.currentRound);
+    } else {
+      setHasSavedGame(false);
+      setSavedGameRound(undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkSavedGame();
+  }, [checkSavedGame, gameState.status]);
+
+  // User Actions
+  const handleStartNewMatch = useCallback(() => {
+    if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
+      sharedMultiplayerClient.leaveRoom();
+    }
+    controller.startNewMatch();
+    sharedActiveGameService.clearActiveGame();
+    setIsHomeOpen(false);
+    setIsFinalResultOpen(false);
+    setIsHistoryOpen(false);
+    setIsStatisticsOpen(false);
+    setIsGameModeOpen(false);
+    setIsRoomLobbyOpen(false);
+  }, [controller, gameState.mode]);
+
+  const handleSelectSolo = useCallback(
+    (difficulty: BotDifficulty) => {
+      setBotDifficulty(difficulty);
+      setIsGameModeOpen(false);
+      handleStartNewMatch();
+    },
+    [handleStartNewMatch]
+  );
+
+  const handleSelectFriends = useCallback(() => {
+    setIsGameModeOpen(false);
+    setRoomLobbyTab('create');
+    setIsRoomLobbyOpen(true);
+  }, []);
+
+  const handleStartRoomMatch = useCallback(
+    (_roomCode: string, _isHost: boolean, _autoFillBots: boolean) => {
+      setIsRoomLobbyOpen(false);
+      setIsHomeOpen(false);
+      setIsFinalResultOpen(false);
+      setIsGameModeOpen(false);
+    },
+    []
+  );
+
+  const handleResumeGame = useCallback(async () => {
+    if (gameState.status !== GameStatus.IDLE) {
+      setIsHomeOpen(false);
+      return;
+    }
+    const saved = await sharedActiveGameService.loadActiveGame();
+    if (saved) {
+      if (typeof sharedGameStore.restore === 'function') {
+        sharedGameStore.restore(saved);
+      } else {
+        sharedGameStore.setState(() => saved);
+      }
+      setIsHomeOpen(false);
+    }
+  }, [gameState.status]);
+
+  const handleNextRound = useCallback(() => {
+    if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
+      sharedMultiplayerClient.nextRound();
+    } else {
+      controller.nextRound();
+    }
+  }, [controller, gameState.mode]);
+
+  const handlePlayCard = useCallback(
+    (card: Card) => {
+      if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
+        sharedMultiplayerClient.playCard(card);
+      } else {
+        controller.playCard(PlayerPosition.SOUTH, card);
+      }
+    },
+    [controller, gameState.mode]
+  );
+
+  const handleSubmitBid = useCallback(
+    (bid: number) => {
+      if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
+        sharedMultiplayerClient.submitBid(bid);
+      } else {
+        controller.submitBid(PlayerPosition.SOUTH, bid);
+      }
+    },
+    [controller, gameState.mode]
+  );
+
+  const isRoundSummaryOpen =
+    gameState.status === GameStatus.ROUND_ENDED &&
+    gameState.roundScores.some((r) => r.roundNumber === gameState.currentRound) &&
+    !isFinalResultOpen;
+
+  const isMatchFinished = gameState.status === GameStatus.MATCH_FINISHED || isFinalResultOpen;
+
+  return (
+    <div className="min-h-screen h-[100dvh] w-full max-w-full overflow-hidden bg-stone-950 text-stone-100 flex flex-col justify-between select-none antialiased">
+      {/* Top HUD Bar */}
+      <TableTopBar
+        state={gameState}
+        onOpenScoreboard={() => setIsScoreboardOpen(true)}
+        onOpenInspector={() => setIsInspectorOpen(true)}
+        onOpenRules={() => setIsRulesOpen(true)}
+        onOpenHome={() => setIsHomeOpen(true)}
+        onStartNewGame={handleStartNewMatch}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenModeSelect={() => setIsGameModeOpen(true)}
+      />
+
+      {/* Main Game Shell Body (Flex Row with Desktop Side Rails + Center Table) */}
+      <div className="flex-1 w-full max-w-7xl mx-auto min-h-0 flex items-stretch justify-center p-1 sm:p-2 lg:p-3 overflow-hidden gap-2 lg:gap-3">
+        {/* Left Side Rail (Desktop only: Quick Info & Knowledge) */}
+        <aside className="hidden lg:flex flex-col justify-between w-44 xl:w-52 shrink-0 py-1 select-none">
+          {/* Top Panel: Game Navigation & Stats */}
+          <div className="space-y-2">
+            <div className="p-3 rounded-2xl bg-stone-900/90 border border-stone-800/90 shadow-md backdrop-blur-md">
+              <div className="text-[11px] font-bold text-stone-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>Overview</span>
+              </div>
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsScoreboardOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/70 transition-all flex items-center justify-between text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <span className="flex items-center gap-2">
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Scorecard</span>
+                  </span>
+                  <span className="font-mono font-bold text-emerald-400">
+                    R{gameState.currentRound}/{gameState.config.totalRounds}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsGameModeOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-amber-200 border border-amber-800/70 transition-all flex items-center gap-2 text-xs font-bold cursor-pointer shadow-xs"
+                >
+                  <Users className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Game Modes</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsRulesOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/70 transition-all flex items-center gap-2 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-stone-300" />
+                  <span>Call Break Rules</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsHistoryOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/70 transition-all flex items-center gap-2 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <History className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Match History</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsStatisticsOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/70 transition-all flex items-center gap-2 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <BarChart2 className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Career Stats</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Match Info Badge */}
+            <div className="p-3 rounded-2xl bg-stone-900/70 border border-stone-800/80 shadow-xs backdrop-blur-md">
+              <div className="text-[10px] font-mono uppercase text-stone-400 tracking-wider mb-1.5 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-emerald-400" />
+                <span>Call Break Rules</span>
+              </div>
+              <ul className="text-[11px] text-stone-400 space-y-1 font-sans">
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span>Spades ♠ are fixed trump</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span>Must follow lead suit</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <span className="text-emerald-400 font-bold">•</span>
+                  <span>Must play higher if able</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom Card: Round Summary */}
+          <div className="p-2.5 rounded-xl bg-stone-900/60 border border-stone-800/60 text-[11px] text-stone-400 flex items-center justify-between">
+            <span className="font-mono">Match Status</span>
+            <span className="font-bold text-emerald-400 font-mono">
+              {gameState.status === GameStatus.BIDDING
+                ? 'Bidding'
+                : gameState.status === GameStatus.PLAYING
+                ? 'Playing'
+                : 'In Progress'}
+            </span>
+          </div>
+        </aside>
+
+        {/* Center Main Playing Table */}
+        <main className="flex-1 w-full max-w-4xl min-h-0 flex flex-col items-center justify-center overflow-hidden">
+          <GameTable
+            state={gameState}
+            legalMoves={legalMoves}
+            onPlayCard={handlePlayCard}
+            onSubmitBid={handleSubmitBid}
+            ruleCoachEnabled={settings.ruleCoachEnabled}
+          />
+        </main>
+
+        {/* Right Side Rail (Desktop only: Match Controls & System) */}
+        <aside className="hidden lg:flex flex-col justify-between w-44 xl:w-52 shrink-0 py-1 select-none">
+          <div className="space-y-2">
+            <div className="p-3 rounded-2xl bg-stone-900/90 border border-stone-800/90 shadow-md backdrop-blur-md">
+              <div className="text-[11px] font-bold text-stone-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Settings className="w-3.5 h-3.5 text-stone-400" />
+                <span>Controls</span>
+              </div>
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  id="btn-side-new-game"
+                  onClick={handleStartNewMatch}
+                  className="w-full px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold transition-all flex items-center gap-2 text-xs cursor-pointer shadow-md shadow-emerald-950/40"
+                  title="Start Fresh Match"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>New Match</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRoomLobbyTab('create');
+                    setIsRoomLobbyOpen(true);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-amber-600/90 hover:bg-amber-500 text-stone-950 font-extrabold transition-all flex items-center gap-2 text-xs cursor-pointer shadow-sm"
+                  title="Create or Join Private Table"
+                >
+                  <Users className="w-3.5 h-3.5 text-stone-950" />
+                  <span>Play with Friends</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-side-sound"
+                  onClick={toggleMute}
+                  className={`w-full px-3 py-2 rounded-xl border transition-all flex items-center justify-between text-xs font-medium cursor-pointer shadow-xs ${
+                    isMuted
+                      ? 'bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border-rose-800/70'
+                      : 'bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border-stone-700/70'
+                  }`}
+                  title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+                >
+                  <span className="flex items-center gap-2">
+                    {isMuted ? (
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    )}
+                    <span>Sound Effects</span>
+                  </span>
+                  <span className="font-mono text-[10px] uppercase font-bold text-stone-400">
+                    {isMuted ? 'Off' : 'On'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-side-settings"
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/70 transition-all flex items-center gap-2 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <Settings className="w-3.5 h-3.5 text-stone-300" />
+                  <span>Preferences</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsTutorialOpen(true)}
+                  className="w-full px-3 py-2 rounded-xl bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/70 transition-all flex items-center gap-2 text-xs font-medium cursor-pointer shadow-xs"
+                >
+                  <HelpCircle className="w-3.5 h-3.5 text-amber-300" />
+                  <span>How to Play</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Diagnostics Quick Access */}
+            <button
+              type="button"
+              id="btn-side-inspector"
+              onClick={() => setIsInspectorOpen(true)}
+              className="w-full p-2.5 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border border-emerald-800/70 transition-colors flex items-center justify-between text-xs font-semibold cursor-pointer shadow-xs"
+              title="System Diagnostics & Architecture Inspector"
+            >
+              <span className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Diagnostics</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400/80">150 Tests</span>
+            </button>
+          </div>
+
+          {/* Engine Footer Tag */}
+          <div className="p-2.5 rounded-xl bg-stone-900/60 border border-stone-800/60 text-[10px] font-mono text-stone-400 flex items-center justify-between">
+            <span>Call Break Engine</span>
+            <span className="text-emerald-400">Offline PWA</span>
+          </div>
+        </aside>
+      </div>
+
+      {/* Bottom Footer Controls (Mobile & Tablet only, hidden on lg desktop to maximize vertical space) */}
+      <footer className="lg:hidden w-full bg-stone-900/95 border-t border-stone-800/90 px-2 sm:px-4 py-1 flex items-center justify-between gap-1 sm:gap-2 text-xs z-20 shrink-0">
+        <div className="flex items-center gap-1.5 text-stone-400 min-w-0">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <span className="font-mono text-[10px] truncate max-w-[120px] xs:max-w-[180px]">
+            {gameState.status === GameStatus.IDLE
+              ? 'Ready to play'
+              : `R${gameState.currentRound}/${gameState.config.totalRounds} • ♠ Trump`}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <button
+            type="button"
+            id="btn-footer-modes"
+            onClick={() => setIsGameModeOpen(true)}
+            className="p-1 xs:px-2 py-1 rounded-lg bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800/80 flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
+            title="Game Modes & Play with Friends"
+          >
+            <Users className="w-3 h-3 text-amber-400" />
+            <span className="hidden xs:inline font-bold">Modes</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-footer-rules"
+            onClick={() => setIsRulesOpen(true)}
+            className="p-1 xs:px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
+            title="Rules"
+          >
+            <BookOpen className="w-3 h-3 text-stone-300" />
+            <span className="hidden xs:inline">Rules</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-footer-scoreboard"
+            onClick={() => setIsScoreboardOpen(true)}
+            className="p-1 xs:px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
+            title="Scorecard"
+          >
+            <Trophy className="w-3 h-3 text-amber-400" />
+            <span className="hidden xs:inline">Scores</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-footer-test"
+            onClick={() => setIsInspectorOpen(true)}
+            className="hidden sm:flex px-2 py-1 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/60 items-center gap-1 transition-colors cursor-pointer text-[11px]"
+          >
+            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+            <span>Diag</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-footer-new-game"
+            onClick={handleStartNewMatch}
+            className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-medium flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
+            title="Start fresh match"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>New</span>
+          </button>
+        </div>
+      </footer>
+
+      {/* Home / Lobby Screen Modal */}
+      <HomeLobbyModal
+        isOpen={isHomeOpen}
+        onStartNewGame={handleStartNewMatch}
+        onOpenRules={() => {
+          setIsHomeOpen(false);
+          setIsRulesOpen(true);
+        }}
+        onOpenScorecard={() => {
+          setIsHomeOpen(false);
+          setIsScoreboardOpen(true);
+        }}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenStatistics={() => setIsStatisticsOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenTutorial={() => setIsTutorialOpen(true)}
+        onOpenGameMode={() => {
+          setIsHomeOpen(false);
+          setIsGameModeOpen(true);
+        }}
+        hasActiveGame={gameState.status !== GameStatus.IDLE || hasSavedGame}
+        activeGameRound={gameState.status !== GameStatus.IDLE ? gameState.currentRound : savedGameRound}
+        onResumeGame={handleResumeGame}
+      />
+
+      {/* Game Mode Selection Modal (Solo vs Play with Friends) */}
+      <GameModeModal
+        isOpen={isGameModeOpen}
+        onClose={() => setIsGameModeOpen(false)}
+        onSelectSolo={handleSelectSolo}
+        onSelectFriends={handleSelectFriends}
+        currentDifficulty={botDifficulty}
+      />
+
+      {/* Play with Friends / Private Room Lobby Modal (Create / Join & WhatsApp Sharing) */}
+      <RoomLobbyModal
+        isOpen={isRoomLobbyOpen}
+        onClose={() => setIsRoomLobbyOpen(false)}
+        onStartRoomMatch={handleStartRoomMatch}
+        initialTab={roomLobbyTab}
+        prefilledRoomCode={prefilledRoomCode}
+      />
+
+      {/* Match History Modal */}
+      <MatchHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onStartNewGame={handleStartNewMatch}
+      />
+
+      {/* Player Statistics Modal */}
+      <PlayerStatisticsModal
+        isOpen={isStatisticsOpen}
+        onClose={() => setIsStatisticsOpen(false)}
+        onStartNewGame={handleStartNewMatch}
+        userPosition={PlayerPosition.SOUTH}
+      />
+
+      {/* Game Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onReplayTutorial={() => setIsTutorialOpen(true)}
+      />
+
+      {/* Rules Guide Modal */}
+      <RulesModal
+        isOpen={isRulesOpen}
+        onClose={() => setIsRulesOpen(false)}
+        onOpenTutorial={() => setIsTutorialOpen(true)}
+      />
+
+      {/* Interactive Tutorial Modal */}
+      <InteractiveTutorialModal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+        onStartNewGame={handleStartNewMatch}
+      />
+
+      {/* Round Complete Summary Modal */}
+      <RoundSummaryModal
+        isOpen={isRoundSummaryOpen}
+        state={gameState}
+        onNextRound={handleNextRound}
+        onOpenScorecard={() => setIsScoreboardOpen(true)}
+        onViewFinalResult={() => setIsFinalResultOpen(true)}
+      />
+
+      {/* Final Match Finished Screen Modal */}
+      <MatchResultModal
+        isOpen={isMatchFinished}
+        state={gameState}
+        onStartNewMatch={handleStartNewMatch}
+        onOpenHome={() => setIsHomeOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+      />
+
+      {/* Scoreboard Matrix Modal */}
+      <ScoreBoardModal
+        isOpen={isScoreboardOpen}
+        onClose={() => setIsScoreboardOpen(false)}
+        state={gameState}
+      />
+
+      {/* Architecture & Contracts Inspector Drawer */}
+      <ArchitectureInspector
+        isOpen={isInspectorOpen}
+        onClose={() => setIsInspectorOpen(false)}
+      />
+
+      {/* Offline Status Indicator */}
+      <OfflineIndicator />
+    </div>
+  );
+};
