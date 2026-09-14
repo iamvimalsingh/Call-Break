@@ -8,7 +8,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GameState, GameStatus } from '../../models/gameState';
+import { GameMode, GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition, PlayerState } from '../../models/player';
 import { Card } from '../../models/card';
 import { TurnTimerPayload } from '../../models/multiplayer';
@@ -61,25 +61,48 @@ export const GameTable: React.FC<GameTableProps> = ({
       : null;
 
   const getPlayerDisplayName = (pos: PlayerPosition, p?: PlayerState): string => {
-    if (!p) return pos;
+    if (state.mode === GameMode.OFFLINE_BOTS) {
+      switch (pos) {
+        case PlayerPosition.SOUTH:
+          return 'You';
+        case PlayerPosition.WEST:
+          return 'West Player';
+        case PlayerPosition.NORTH:
+          return 'North Player';
+        case PlayerPosition.EAST:
+          return 'East Player';
+      }
+    }
+    if (!p) {
+      switch (pos) {
+        case PlayerPosition.SOUTH:
+          return 'You';
+        case PlayerPosition.WEST:
+          return 'West Player';
+        case PlayerPosition.NORTH:
+          return 'North Player';
+        case PlayerPosition.EAST:
+          return 'East Player';
+      }
+    }
     const isSouth = pos === PlayerPosition.SOUTH;
-    const raw = (p.name || '').replace(/\s*\(You\)$/i, '').trim();
+    const raw = (p.name || '')
+      .replace(/\s*\((You|Host|West|North|East|South|Friend\s*\d+)\)/gi, '')
+      .trim();
+
     if (isSouth) {
       return raw && raw !== 'Player' && raw !== 'You' && raw !== 'Host' && raw !== 'Host (Player 1)'
         ? `${raw} (You)`
         : 'You';
     }
-    const dir = pos.charAt(0) + pos.slice(1).toLowerCase();
-    if (new RegExp(`\\(${dir}\\)$`, 'i').test(raw)) {
-      return raw;
-    }
+
     let base = raw;
     if (!base || /^(friend|player|opponent)$/i.test(base)) {
-      if (pos === PlayerPosition.WEST) base = 'Friend 1';
-      else if (pos === PlayerPosition.NORTH) base = 'Friend 2';
-      else if (pos === PlayerPosition.EAST) base = 'Friend 3';
+      if (pos === PlayerPosition.WEST) base = 'West Player';
+      else if (pos === PlayerPosition.NORTH) base = 'North Player';
+      else if (pos === PlayerPosition.EAST) base = 'East Player';
     }
-    return `${base} (${dir})`;
+    return base;
   };
 
   const playerNames: Record<PlayerPosition, string> = {
@@ -122,7 +145,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={transitions.springSmooth}
-        className="relative w-full max-w-5xl h-full flex flex-col items-center rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-b from-[#062418]/95 via-[#041a11]/95 to-[#020e09]/98 border sm:border-4 md:border-[6px] border-[#1f382a] ring-1 ring-emerald-400/30 ring-offset-1 sm:ring-offset-4 ring-offset-stone-950 shadow-[0_20px_70px_rgba(0,0,0,0.85)] p-0.5 xs:p-1 sm:p-2.5 md:p-3.5 min-h-0 overflow-hidden"
+        className="relative w-full max-w-5xl h-full flex flex-col items-center rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-b from-[#062418]/95 via-[#041a11]/95 to-[#020e09]/98 border sm:border-4 md:border-[6px] border-[#1f382a] ring-1 ring-emerald-400/30 ring-offset-1 sm:ring-offset-4 ring-offset-stone-950 shadow-[0_20px_70px_rgba(0,0,0,0.85)] p-0.5 sm:p-2 md:p-3 min-h-0 overflow-hidden"
       >
         {/* Subtle Felt Texture & Outer Cushion Rail Accent */}
         <div className="absolute inset-1 sm:inset-3 rounded-xl sm:rounded-[2.75rem] border border-emerald-400/15 pointer-events-none" />
@@ -130,7 +153,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/15 via-emerald-950/20 to-black/60 pointer-events-none rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem]" />
 
         {/* 1. North Player Zone */}
-        <div id="zone-north-player" className="w-full flex justify-center z-10 pt-0.5 sm:pt-1 shrink-0">
+        <div id="zone-north-player" className="w-full flex justify-center z-10 pt-1 sm:pt-2 shrink-0">
           <PlayerSlot
             player={northPlayer}
             position={PlayerPosition.NORTH}
@@ -140,7 +163,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         </div>
 
         {/* 2. Middle Zone (West Player, Center Trick Arena / Bidding Center, East Player) */}
-        <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-6 md:px-10 lg:px-14 my-0 xs:my-0.5 sm:my-1">
+        <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-4 md:px-8 lg:px-12 my-0 xs:my-0.5 sm:my-1">
           {/* West Player */}
           <div className="w-auto flex justify-start shrink-0">
             <PlayerSlot

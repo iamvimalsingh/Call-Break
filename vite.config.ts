@@ -1,8 +1,17 @@
+// Prevent tsx/eval from exposing __dirname = '.' which breaks ESM libraries expecting standard Node ESM
+if (typeof (globalThis as any).__dirname === 'string' && (globalThis as any).__dirname === '.') {
+  delete (globalThis as any).__dirname;
+}
+
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import {fileURLToPath} from 'url';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(() => {
   return {
@@ -91,8 +100,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],
@@ -106,11 +114,35 @@ export default defineConfig(() => {
       include: ['react', 'react-dom', 'motion/react', 'lucide-react'],
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
+      host: '0.0.0.0',
+      port: 3000,
+      strictPort: false,
+      // Allow AI Studio internal iframe/proxy hostnames
+      allowedHosts: true,
+      hmr: {
+        clientPort: 443,
+      },
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    build: {
+      outDir: 'dist',
+      assetsDir: 'assets',
+      emptyOutDir: true,
+      sourcemap: true,
+      chunkSizeWarningLimit: 1200,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('lucide-react')) {
+                return 'vendor-lucide';
+              }
+              return 'vendor';
+            }
+          },
+        },
+      },
     },
   };
 });

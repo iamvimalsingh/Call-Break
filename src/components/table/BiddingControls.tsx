@@ -80,16 +80,16 @@ export const BiddingControls: React.FC<BiddingControlsProps> = ({
       transition={transitions.springSmooth}
       className="w-full max-w-xl mx-auto p-1.5 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-emerald-500/40 shadow-xl backdrop-blur-xl flex flex-col items-center gap-1 sm:gap-2 select-none ring-1 ring-emerald-500/20"
     >
-      {/* Compact Header */}
-      <div className="w-full flex items-center justify-between px-1">
-        <div className="flex items-center gap-1 sm:gap-1.5 text-emerald-400 text-[10px] xs:text-[11px] sm:text-xs font-semibold uppercase tracking-wider">
-          <Sparkles className="w-3 h-3 text-emerald-400" />
-          <span>Place Your Call (1–13 Tricks)</span>
+      {/* Clean Header: Title and Subtitle separated onto distinct lines */}
+      <div className="w-full flex flex-col items-center sm:items-start px-1 text-center sm:text-left gap-0.5">
+        <div className="flex items-center justify-center sm:justify-start gap-1.5 text-emerald-400 text-[11px] sm:text-xs font-bold uppercase tracking-wider">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="whitespace-nowrap">PLACE YOUR CALL (1–13 TRICKS)</span>
         </div>
         {ruleCoachEnabled && (
-          <span className="hidden sm:inline-block text-[10px] text-stone-400">
-            Estimate tricks based on high cards & Spades
-          </span>
+          <p className="text-[10px] sm:text-xs text-stone-400 font-normal leading-tight">
+            Estimate tricks based on high cards &amp; Spades
+          </p>
         )}
       </div>
 

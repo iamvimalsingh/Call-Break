@@ -6,7 +6,7 @@
  * Phase 6 Game Table & Playable Offline Game
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GameMode, GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
@@ -277,13 +277,34 @@ export const GameShell: React.FC = () => {
     };
   }, [gameState.mode, gameState.status, gameState.currentPlayer, isMuted, controller]);
 
+  // 800ms trick pause so the player clearly sees who won before cards sweep away
+  const [isTrickPauseActive, setIsTrickPauseActive] = useState<boolean>(false);
+  const prevCompletedCountRef = useRef<number>(gameState.completedTricks.length);
+
+  useEffect(() => {
+    const currentCompleted = gameState.completedTricks.length;
+    if (currentCompleted > prevCompletedCountRef.current) {
+      setIsTrickPauseActive(true);
+      const timer = setTimeout(() => {
+        setIsTrickPauseActive(false);
+      }, 800);
+      prevCompletedCountRef.current = currentCompleted;
+      return () => clearTimeout(timer);
+    }
+    prevCompletedCountRef.current = currentCompleted;
+  }, [gameState.completedTricks.length]);
+
   // Compute legal moves for human player (South) using RulesEngine
   const legalMoves = useMemo(() => {
-    if (gameState.status !== GameStatus.PLAYING || gameState.currentPlayer !== PlayerPosition.SOUTH) {
+    if (
+      isTrickPauseActive ||
+      gameState.status !== GameStatus.PLAYING ||
+      gameState.currentPlayer !== PlayerPosition.SOUTH
+    ) {
       return [];
     }
     return controller.getLegalMovesForPlayer(PlayerPosition.SOUTH);
-  }, [gameState, controller]);
+  }, [gameState, controller, isTrickPauseActive]);
 
   // Bot Turn Automation Loop with Natural Presentation Delay (Only for OFFLINE_BOTS)
   useEffect(() => {
@@ -307,9 +328,13 @@ export const GameShell: React.FC = () => {
     // 2. Bot Card Play Turn
     else if (gameState.status === GameStatus.PLAYING) {
       if (controller.isBotPlayer(gameState.currentPlayer)) {
+        const isNewTrickLead =
+          gameState.currentTrick.cards.length === 0 && gameState.completedTricks.length > 0;
+        const delay = isNewTrickLead ? Math.max(botPlayDelay, 800) : botPlayDelay;
+
         timerId = setTimeout(() => {
           controller.stepBotTurn();
-        }, botPlayDelay);
+        }, delay);
       }
     }
 
@@ -319,7 +344,9 @@ export const GameShell: React.FC = () => {
         (r) => r.roundNumber === gameState.currentRound
       );
       if (!alreadyScored) {
-        controller.completeRound();
+        timerId = setTimeout(() => {
+          controller.completeRound();
+        }, 800);
       }
     }
 
@@ -478,7 +505,7 @@ export const GameShell: React.FC = () => {
     if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
       sharedMultiplayerClient.leaveRoom();
     }
-    controller.startNewMatch(GameMode.OFFLINE_BOTS, true, totalRounds);
+    controller.startNewMatch(GameMode.OFFLINE_BOTS, false, totalRounds);
     sharedActiveGameService.clearActiveGame();
     setIsHomeOpen(false);
     setIsFinalResultOpen(false);
@@ -559,13 +586,16 @@ export const GameShell: React.FC = () => {
 
   const handlePlayCard = useCallback(
     (card: Card) => {
+      if (isTrickPauseActive) {
+        return;
+      }
       if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
         sharedMultiplayerClient.playCard(card);
       } else {
         controller.playCard(PlayerPosition.SOUTH, card);
       }
     },
-    [controller, gameState.mode]
+    [controller, gameState.mode, isTrickPauseActive]
   );
 
   const handleSubmitBid = useCallback(
@@ -621,7 +651,7 @@ export const GameShell: React.FC = () => {
       />
 
       {/* Main Game Shell Body (Flex Row with Desktop Side Rails + Center Table) */}
-      <div className="flex-1 w-full max-w-7xl mx-auto min-h-0 flex items-stretch justify-center p-1 sm:p-2 lg:p-3 overflow-hidden gap-2 lg:gap-3">
+      <div className="flex-1 w-full max-w-7xl mx-auto min-h-0 flex items-stretch justify-center p-0.5 sm:p-2 lg:p-3 overflow-hidden gap-2 lg:gap-3">
         {/* Left Side Rail (Desktop only: Quick Info & Knowledge) */}
         <aside className="hidden lg:flex flex-col justify-between w-44 xl:w-52 shrink-0 py-1 select-none">
           {/* Top Panel: Game Navigation & Stats */}

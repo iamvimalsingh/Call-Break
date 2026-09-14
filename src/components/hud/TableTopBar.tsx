@@ -135,26 +135,26 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
     : null;
 
   return (
-    <header className="w-full bg-stone-950/90 backdrop-blur-xl border-b border-stone-800/90 text-stone-200 px-2 sm:px-4 md:px-6 py-1.5 sm:py-2 flex items-center justify-between z-20 select-none shadow-lg shrink-0 gap-2">
+    <header className="w-full bg-stone-950/90 backdrop-blur-xl border-b border-stone-800/90 text-stone-200 px-2 sm:px-4 md:px-6 py-1.5 sm:py-2 flex items-center justify-between z-20 select-none shadow-lg shrink-0 gap-1.5 sm:gap-2">
       {/* Brand & Home Navigation */}
-      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <button
           type="button"
           onClick={onOpenHome}
           className="flex items-center gap-1.5 sm:gap-2 group cursor-pointer hover:opacity-95 transition-opacity"
           title="Game Menu / Home"
         >
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-900 border border-emerald-400/50 flex items-center justify-center font-serif text-sm sm:text-base text-emerald-200 shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-900 border border-emerald-400/50 flex items-center justify-center font-serif text-sm sm:text-base text-emerald-200 shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform shrink-0">
             <span className="text-amber-300 drop-shadow-xs">♠</span>
           </div>
-          <div className="text-left">
+          <div className="text-left flex flex-col justify-center">
             <div className="flex items-center gap-1">
-              <span className="text-xs sm:text-sm font-extrabold tracking-tight text-white">Call Break</span>
-              <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-stone-900 border border-stone-700/90 text-stone-300 font-bold hidden xs:inline">
+              <span className="text-xs sm:text-sm font-extrabold tracking-tight text-white whitespace-nowrap">Call Break</span>
+              <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-stone-900 border border-stone-700/90 text-stone-300 font-bold hidden sm:inline">
                 Lakdi
               </span>
             </div>
-            <div className="flex items-center gap-1 mt-0.2">
+            <div className="hidden sm:flex items-center gap-1 mt-0.5">
               <span className={`text-[8px] sm:text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded-full border shadow-xs ${phaseBadge.color}`}>
                 {phaseBadge.label}
               </span>
@@ -164,30 +164,36 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
       </div>
 
       {/* Match Context Indicators */}
-      <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs overflow-x-auto no-scrollbar py-0.5">
+      <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs shrink-0">
         {/* Round Badge */}
         <div className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 flex items-center gap-1 shadow-xs shrink-0">
-          <span className="text-stone-400 font-medium">R:</span>
+          <span className="text-stone-400 font-medium hidden xs:inline">Round</span>
+          <span className="text-stone-400 font-medium xs:hidden">R:</span>
           <span className="font-mono font-bold text-emerald-400">
             {state.currentRound}
             <span className="text-stone-500 font-normal">/{state.config.totalRounds}</span>
           </span>
         </div>
 
-        {/* Trump Badge */}
-        <div className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 flex items-center gap-1 shadow-xs shrink-0">
-          <span className="text-stone-400 font-medium hidden xs:inline">Trump:</span>
-          <span className="font-bold text-white flex items-center gap-0.5">
-            <span className="text-emerald-400 font-serif text-sm leading-none drop-shadow-xs">{trumpInfo.symbol}</span>
-            <span className="hidden md:inline font-semibold">{trumpInfo.name}</span>
+        {/* Prominent High-Contrast Trump Indicator */}
+        <div
+          id="badge-hud-trump"
+          className="px-2 sm:px-3 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-gradient-to-r from-amber-950/95 via-stone-900/95 to-amber-950/95 border-2 border-amber-400 text-amber-200 shadow-md shadow-amber-950/60 ring-1 ring-amber-400/40 flex items-center gap-1.5 shrink-0"
+          title="Trump Suit: Spades (Fixed)"
+        >
+          <span className="text-amber-400 font-serif font-black text-sm sm:text-base leading-none drop-shadow-[0_1px_3px_rgba(251,191,36,0.6)]">
+            ♠
+          </span>
+          <span className="font-black tracking-wider text-[9px] xs:text-[10px] sm:text-xs text-amber-200 uppercase whitespace-nowrap">
+            SPADES <span className="text-amber-400 font-extrabold">(TRUMP)</span>
           </span>
         </div>
 
-        {/* Total Bids Badge (Active once all 4 players submit bids) */}
+        {/* Total Bids Badge (Hidden on mobile portrait; active once all 4 players submit bids) */}
         {totalBids !== null && (
           <div
             id="badge-total-bids"
-            className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-amber-950/90 border border-amber-600/80 flex items-center gap-1 shadow-xs shrink-0"
+            className="hidden sm:flex px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-amber-950/90 border border-amber-600/80 items-center gap-1 shadow-xs shrink-0"
             title={`Total round bids: ${totalBids} out of 13 tricks`}
           >
             <span className="text-amber-200/90 font-medium text-[9px] sm:text-xs">Total Bids:</span>
@@ -200,7 +206,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
 
         {/* In-Game Table Live Status (Multiplayer) */}
         {isMultiplayer && (
-          <div className="flex items-center shrink-0">
+          <div className="hidden sm:flex items-center shrink-0">
             {connectionState === 'OPEN' ? (
               <div
                 id="badge-table-online"
@@ -208,7 +214,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
                 title={`Connected to online table: ${roomCode || 'Active'}`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="font-semibold whitespace-nowrap hidden sm:inline">Online Room: </span>
+                <span className="font-semibold whitespace-nowrap hidden sm:inline">Online: </span>
                 <span className="font-bold">{roomCode || 'Live'}</span>
               </div>
             ) : (
@@ -225,29 +231,28 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         )}
 
         {/* Dealer Indicator */}
-        <div className="hidden sm:flex px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 items-center gap-1 shadow-xs shrink-0">
+        <div className="hidden md:flex px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 items-center gap-1 shadow-xs shrink-0">
           <span className="text-stone-400">Dealer:</span>
           <span className="font-semibold text-amber-300 font-mono">
             {dealerPlayer?.position === PlayerPosition.SOUTH ? 'You' : dealerPlayer?.name ?? state.dealer}
           </span>
         </div>
 
-        {/* Fair Play Transparency Indicator */}
+        {/* Fair Play Transparency Indicator (Hidden on mobile to preserve single-line purity) */}
         <div
           id="badge-fair-play-transparency"
-          className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-emerald-950/90 border border-emerald-600/70 flex items-center gap-1 shadow-xs shrink-0"
+          className="hidden md:flex px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-emerald-950/90 border border-emerald-600/70 items-center gap-1 shadow-xs shrink-0"
           title="🛡️ Fair Play: 100% Server Shuffled (Zero Host Influence)"
         >
           <span className="text-[10px] sm:text-xs">🛡️</span>
           <span className="text-[9px] sm:text-[11px] font-semibold text-emerald-300 whitespace-nowrap">
-            Fair Play: <span className="font-bold text-white">100% Server Shuffled</span>{' '}
-            <span className="text-emerald-400/80 font-normal hidden xl:inline">(Zero Host Influence)</span>
+            Fair Play: <span className="font-bold text-white">100% Server Shuffled</span>
           </span>
         </div>
 
         {/* Active Turn Indicator (Playing phase) */}
         {state.status === GameStatus.PLAYING && (
-          <div className="hidden lg:flex px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-600/70 items-center gap-1.5 shadow-sm shrink-0">
+          <div className="hidden xl:flex px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-600/70 items-center gap-1.5 shadow-sm shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <span className="text-stone-300 text-[11px]">Turn:</span>
             <span className="font-bold text-emerald-300 text-[11px]">
@@ -259,8 +264,8 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
 
       {/* Utility Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 z-50">
-        {/* Aux Action Buttons */}
-        <div className="hidden md:flex items-center gap-1 sm:gap-1.5">
+        {/* Aux Action Buttons: Suppressed on desktop (lg:hidden) where sidebars are visible; hidden on mobile (<768px) where Menu is primary */}
+        <div className="hidden md:flex lg:hidden items-center gap-1 sm:gap-1.5">
           {/* PWA Install Button (auto-hides when installed or unavailable) */}
           <PWAInstallButton variant="compact" />
 

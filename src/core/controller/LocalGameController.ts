@@ -133,14 +133,33 @@ export class LocalGameController implements IGameController {
       if (!saved) {
         return false;
       }
+      const sanitizedPlayers =
+        saved.mode === GameMode.OFFLINE_BOTS
+          ? {
+              ...saved.players,
+              [PlayerPosition.SOUTH]: { ...saved.players[PlayerPosition.SOUTH], name: 'You' },
+              [PlayerPosition.WEST]: { ...saved.players[PlayerPosition.WEST], name: 'West Player' },
+              [PlayerPosition.NORTH]: { ...saved.players[PlayerPosition.NORTH], name: 'North Player' },
+              [PlayerPosition.EAST]: { ...saved.players[PlayerPosition.EAST], name: 'East Player' },
+            }
+          : saved.players;
+
+      const sanitizedSaved: GameState = {
+        ...saved,
+        config: {
+          ...saved.config,
+          enableRebiddingRule: false,
+        },
+        players: sanitizedPlayers,
+      };
       if (typeof this.store.restore === 'function') {
-        this.store.restore(saved);
+        this.store.restore(sanitizedSaved);
       } else {
-        this.store.setState(() => saved, {
+        this.store.setState(() => sanitizedSaved, {
           type: 'MATCH_RESTORED',
           payload: {
-            matchId: saved.matchId,
-            roundNumber: saved.currentRound,
+            matchId: sanitizedSaved.matchId,
+            roundNumber: sanitizedSaved.currentRound,
           },
         });
       }
@@ -205,6 +224,34 @@ export class LocalGameController implements IGameController {
     const southBase = userSavedName && !/^(host|player|you)$/i.test(userSavedName) ? userSavedName : 'Host';
     const finalSouthName = `${southBase} (You)`;
 
+    const players =
+      mode === GameMode.OFFLINE_BOTS
+        ? {
+            [PlayerPosition.SOUTH]: {
+              ...rawState.players[PlayerPosition.SOUTH],
+              name: 'You',
+            },
+            [PlayerPosition.WEST]: {
+              ...rawState.players[PlayerPosition.WEST],
+              name: 'West Player',
+            },
+            [PlayerPosition.NORTH]: {
+              ...rawState.players[PlayerPosition.NORTH],
+              name: 'North Player',
+            },
+            [PlayerPosition.EAST]: {
+              ...rawState.players[PlayerPosition.EAST],
+              name: 'East Player',
+            },
+          }
+        : {
+            ...rawState.players,
+            [PlayerPosition.SOUTH]: {
+              ...rawState.players.SOUTH,
+              name: finalSouthName,
+            },
+          };
+
     const freshState: GameState = {
       ...rawState,
       config: {
@@ -212,13 +259,7 @@ export class LocalGameController implements IGameController {
         totalRounds: totalRounds === 10 ? 10 : 5,
         ...(enableRebiddingRule ? { enableRebiddingRule: true } : {}),
       },
-      players: {
-        ...rawState.players,
-        [PlayerPosition.SOUTH]: {
-          ...rawState.players.SOUTH,
-          name: finalSouthName,
-        },
-      },
+      players,
     };
     this.store.reset(freshState);
     this.persistState(freshState);

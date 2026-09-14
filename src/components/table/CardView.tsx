@@ -47,9 +47,9 @@ export const CardView: React.FC<CardViewProps> = ({
   if (faceDown || !card) {
     const sizeClasses =
       size === 'sm'
-        ? 'w-10 h-14 text-[9px]'
+        ? 'w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 text-[10px]'
         : size === 'lg'
-        ? 'w-16 h-24 sm:w-20 sm:h-28 text-xs'
+        ? 'w-20 h-28 sm:w-24 sm:h-34 md:w-28 md:h-40 text-xs'
         : 'w-12 h-18 sm:w-14 sm:h-20 text-[10px]';
 
     return (
@@ -77,10 +77,10 @@ export const CardView: React.FC<CardViewProps> = ({
   // Sizing definitions: authentic playing-card aspect ratio with legible mobile width
   const sizeClasses =
     size === 'sm'
-      ? 'w-10 h-14 xs:w-11 xs:h-15 sm:w-13 sm:h-18 text-[10px] xs:text-[11px] sm:text-xs rounded-lg sm:rounded-xl p-1'
+      ? 'w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 text-[11px] xs:text-xs sm:text-sm rounded-lg sm:rounded-xl p-1 xs:p-1.5'
       : size === 'lg'
       ? 'w-20 h-28 sm:w-24 sm:h-34 md:w-28 md:h-40 text-base sm:text-lg rounded-2xl p-2 sm:p-2.5'
-      : 'w-[54px] h-[86px] xs:w-[58px] xs:h-[92px] sm:w-[64px] sm:h-[100px] md:w-[72px] md:h-[112px] text-xs sm:text-sm rounded-xl sm:rounded-2xl p-1 xs:p-1.5 sm:p-2';
+      : 'w-[54px] h-[84px] xs:w-[58px] xs:h-[90px] sm:w-[64px] sm:h-[100px] md:w-[72px] md:h-[112px] text-xs sm:text-sm rounded-xl sm:rounded-2xl p-1 xs:p-1.5 sm:p-2';
 
   // Playable, selected, inspectable, and disabled styling
   let interactiveClasses =

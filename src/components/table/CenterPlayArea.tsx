@@ -83,19 +83,9 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
 
   return (
     <div className="flex flex-col items-center justify-center shrink-0 mx-auto select-none">
-      {/* Table-Felt Status Badges: Gold Trump, Round/Trick, and Live Score Leader */}
-      <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2 mb-1 sm:mb-2 z-10">
-        {/* 1. Gold Trump Indicator */}
-        <div
-          id="badge-trump-gold"
-          className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-950/90 via-[#261705]/95 to-amber-950/90 border border-amber-400/80 text-amber-200 shadow-md shadow-amber-950/50 ring-1 ring-amber-400/30 text-[9px] xs:text-[10px] sm:text-xs font-bold"
-          title="Trump Suit: Spades (Fixed)"
-        >
-          <span className="text-amber-400 text-xs sm:text-sm leading-none drop-shadow-xs">♠</span>
-          <span className="tracking-wide">Trump: Spades</span>
-        </div>
-
-        {/* 2. Round & Trick Progress */}
+      {/* Table-Felt Status Badges: Clean Round/Trick Progress and Live Score Leader */}
+      <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2 mb-0.5 sm:mb-1.5 z-10">
+        {/* Round & Trick Progress */}
         <div
           id="badge-round-trick"
           className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full bg-stone-950/90 border border-emerald-500/50 text-emerald-300 shadow-md text-[9px] xs:text-[10px] sm:text-xs font-mono font-bold"
@@ -105,7 +95,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
           <span>Trick {trickNumber}/13</span>
         </div>
 
-        {/* 3. Live Score Leader Pill */}
+        {/* Live Score Leader Pill */}
         {leaderScoreText && (
           <div
             id="badge-score-leader"
@@ -117,13 +107,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         )}
       </div>
 
-      {/* Enlarged Central Trick Resolution Ring (+25-30% mobile footprint) */}
+      {/* Enlarged Central Trick Resolution Ring (+20% scale for legibility) */}
       <div
         id="center-trick-area"
         className={`relative ${
           isBidding
-            ? 'w-32 h-32 xs:w-38 xs:h-38 sm:w-44 sm:h-44 md:w-48 md:h-48 max-w-[200px] max-h-[200px]'
-            : 'w-48 h-48 xs:w-56 xs:h-56 sm:w-64 sm:h-64 md:w-72 md:h-72 lg:w-80 lg:h-80 max-w-[330px] max-h-[330px]'
+            ? 'w-36 h-36 xs:w-42 xs:h-42 sm:w-48 sm:h-48 max-w-[220px] max-h-[220px]'
+            : 'w-[230px] h-[230px] xs:w-[268px] xs:h-[268px] sm:w-[308px] sm:h-[308px] md:w-[346px] md:h-[346px] lg:w-[380px] lg:h-[380px] max-w-[390px] max-h-[390px]'
         } rounded-full bg-gradient-to-b from-[#08291a]/95 via-[#041d13]/90 to-[#02120b]/98 border-2 border-emerald-500/35 flex items-center justify-center shadow-[inset_0_0_40px_rgba(0,0,0,0.7),0_15px_35px_rgba(0,0,0,0.5)] ring-1 ring-emerald-400/25 transition-all duration-300 shrink-0`}
       >
         {/* Decorative Outer Felt Rings and Crosshairs */}
@@ -131,7 +121,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         <div className="absolute inset-6 sm:inset-10 rounded-full border border-dashed border-emerald-500/10 pointer-events-none" />
 
         {/* --- North Slot --- */}
-        <div className="absolute top-1 xs:top-1.5 sm:top-2.5 z-10 flex flex-col items-center">
+        <div className="absolute top-1.5 xs:top-2 sm:top-2.5 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {northPlayed ? (
               <motion.div
@@ -145,7 +135,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.NORTH ? (prefersReducedMotion ? 1 : 1.08) : 1,
+                  scale: winnerPos === PlayerPosition.NORTH ? (prefersReducedMotion ? 1 : 1.1) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -160,13 +150,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.NORTH]}
                   className={
                     winnerPos === PlayerPosition.NORTH
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-amber-300 shadow-2xl shadow-amber-400/50 brightness-105'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-11 h-15 xs:w-12 xs:h-16 sm:w-14 sm:h-19 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.NORTH]}
               </div>
             )}
@@ -174,7 +164,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- South Slot --- */}
-        <div className="absolute bottom-1 xs:bottom-1.5 sm:bottom-2.5 z-10 flex flex-col items-center">
+        <div className="absolute bottom-1.5 xs:bottom-2 sm:bottom-2.5 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {southPlayed ? (
               <motion.div
@@ -188,7 +178,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.SOUTH ? (prefersReducedMotion ? 1 : 1.08) : 1,
+                  scale: winnerPos === PlayerPosition.SOUTH ? (prefersReducedMotion ? 1 : 1.1) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -203,13 +193,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.SOUTH]}
                   className={
                     winnerPos === PlayerPosition.SOUTH
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-amber-300 shadow-2xl shadow-amber-400/50 brightness-105'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-11 h-15 xs:w-12 xs:h-16 sm:w-14 sm:h-19 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.SOUTH]}
               </div>
             )}
@@ -217,7 +207,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- West Slot --- */}
-        <div className="absolute left-1 xs:left-1.5 sm:left-2.5 z-10 flex flex-col items-center">
+        <div className="absolute left-1.5 xs:left-2 sm:left-2.5 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {westPlayed ? (
               <motion.div
@@ -231,7 +221,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.WEST ? (prefersReducedMotion ? 1 : 1.08) : 1,
+                  scale: winnerPos === PlayerPosition.WEST ? (prefersReducedMotion ? 1 : 1.1) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -246,13 +236,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.WEST]}
                   className={
                     winnerPos === PlayerPosition.WEST
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-amber-300 shadow-2xl shadow-amber-400/50 brightness-105'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-11 h-15 xs:w-12 xs:h-16 sm:w-14 sm:h-19 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.WEST]}
               </div>
             )}
@@ -260,7 +250,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- East Slot --- */}
-        <div className="absolute right-1 xs:right-1.5 sm:right-2.5 z-10 flex flex-col items-center">
+        <div className="absolute right-1.5 xs:right-2 sm:right-2.5 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {eastPlayed ? (
               <motion.div
@@ -274,7 +264,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.EAST ? (prefersReducedMotion ? 1 : 1.08) : 1,
+                  scale: winnerPos === PlayerPosition.EAST ? (prefersReducedMotion ? 1 : 1.1) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -289,13 +279,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.EAST]}
                   className={
                     winnerPos === PlayerPosition.EAST
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-amber-300 shadow-2xl shadow-amber-400/50 brightness-105'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-11 h-15 xs:w-12 xs:h-16 sm:w-14 sm:h-19 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.EAST]}
               </div>
             )}
@@ -304,61 +294,54 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
 
         {/* --- Center Info Disc --- */}
         <div className="z-0 flex flex-col items-center justify-center text-center p-1 sm:p-2 max-w-[130px] xs:max-w-[150px] sm:max-w-[180px] pointer-events-none">
-          <AnimatePresence mode="wait">
-            {isShowingCompleted && winnerPos ? (
-              <motion.div
-                key="trick-winner-disc"
-                initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                transition={transitions.springFast}
-                className="flex flex-col items-center"
-              >
-                <span className="flex items-center gap-1 sm:gap-1.5 text-[9px] xs:text-[10px] sm:text-xs font-bold text-amber-200 bg-stone-950/95 border border-amber-400/80 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-xl ring-1 sm:ring-2 ring-amber-400/40">
-                  <Trophy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 animate-bounce shrink-0" />
-                  <span className="truncate max-w-[110px] sm:max-w-[150px]">
-                    {winnerPos === PlayerPosition.SOUTH
-                      ? `You won Trick ${trickNumber}!`
-                      : `${playerNames[winnerPos]} won Trick ${trickNumber}!`}
-                  </span>
-                </span>
-                <span className="text-[8px] sm:text-[9px] font-mono text-stone-400 mt-0.5 sm:mt-1">
-                  Trick {trickNumber} of 13
-                </span>
-              </motion.div>
-            ) : (
-              <div key="trick-active-disc" className="flex flex-col items-center">
-                <div className="text-[8.5px] xs:text-[9.5px] sm:text-[11px] uppercase font-mono tracking-wider text-emerald-400 font-bold">
-                  Trick {trickNumber}/13
-                </div>
+          <div key="trick-active-disc" className="flex flex-col items-center">
+            <div className="text-[8.5px] xs:text-[9.5px] sm:text-[11px] uppercase font-mono tracking-wider text-emerald-400 font-bold">
+              Trick {trickNumber}/13
+            </div>
 
-                {leadSuitInfo ? (
-                  <div className="mt-0.5 sm:mt-1 flex items-center gap-1 text-[8.5px] xs:text-[9.5px] sm:text-[11px] font-semibold text-white bg-stone-950/90 px-2 sm:px-2.5 py-0.5 rounded-full border border-stone-700/80 shadow-md">
-                    <span className="text-stone-400 hidden xs:inline">Lead:</span>
-                    <span className="text-emerald-400 font-bold text-xs sm:text-sm leading-none">{leadSuitInfo.symbol}</span>
-                    <span className="truncate max-w-[45px] sm:max-w-none">{leadSuitInfo.name}</span>
-                    <span className="text-stone-500 font-normal hidden xs:inline">•</span>
-                    <span className="text-amber-300 font-medium text-[8px] sm:text-[9.5px] hidden xs:inline truncate max-w-[55px] sm:max-w-none">
-                      {currentTrick.leader === PlayerPosition.SOUTH ? 'You led' : `${playerNames[currentTrick.leader]} led`}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-0.5 text-[8px] sm:text-[10px] text-stone-300 font-medium bg-stone-950/80 px-2 py-0.5 rounded-full border border-stone-800">
-                    <span>
-                      {currentTrick.leader === PlayerPosition.SOUTH ? 'You lead' : `${playerNames[currentTrick.leader]} leads`}
-                    </span>
-                  </div>
-                )}
+            {leadSuitInfo ? (
+              <div className="mt-0.5 sm:mt-1 flex items-center gap-1 text-[8.5px] xs:text-[9.5px] sm:text-[11px] font-semibold text-white bg-stone-950/90 px-2 sm:px-2.5 py-0.5 rounded-full border border-stone-700/80 shadow-md">
+                <span className="text-stone-400 hidden xs:inline">Lead:</span>
+                <span className="text-emerald-400 font-bold text-xs sm:text-sm leading-none">{leadSuitInfo.symbol}</span>
+                <span className="truncate max-w-[45px] sm:max-w-none">{leadSuitInfo.name}</span>
+                <span className="text-stone-500 font-normal hidden xs:inline">•</span>
+                <span className="text-amber-300 font-medium text-[8px] sm:text-[9.5px] hidden xs:inline truncate max-w-[55px] sm:max-w-none">
+                  {currentTrick.leader === PlayerPosition.SOUTH ? 'You led' : `${playerNames[currentTrick.leader]} led`}
+                </span>
+              </div>
+            ) : (
+              <div className="mt-0.5 text-[8px] sm:text-[10px] text-stone-300 font-medium bg-stone-950/80 px-2 py-0.5 rounded-full border border-stone-800">
+                <span>
+                  {currentTrick.leader === PlayerPosition.SOUTH ? 'You lead' : `${playerNames[currentTrick.leader]} leads`}
+                </span>
               </div>
             )}
-          </AnimatePresence>
+          </div>
         </div>
 
-        {/* Action Notification Pill below the center disc */}
-        <AnimatePresence>
-          {actionMessage && (
+        {/* Single Authoritative Winner Toast OR Action Pill directly beneath trick circle */}
+        <AnimatePresence mode="wait">
+          {isShowingCompleted && winnerPos ? (
+            <motion.div
+              key={`winner-toast-${trickNumber}-${winnerPos}`}
+              id="trick-winner-toast"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8, scale: 0.92 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 4, scale: 0.95 }}
+              transition={transitions.springFast}
+              className="absolute -bottom-5 sm:-bottom-6 md:-bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap px-3.5 sm:px-5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-stone-950 via-[#1c1404] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_20px_rgba(0,0,0,0.85),0_0_20px_rgba(251,191,36,0.35)] text-xs sm:text-sm font-bold flex items-center gap-1.5 ring-2 ring-amber-400/40 z-30 tracking-wide"
+            >
+              <span className="text-amber-400 text-sm sm:text-base">🏆</span>
+              <span>
+                {winnerPos === PlayerPosition.SOUTH
+                  ? `You won Trick ${trickNumber}!`
+                  : `${playerNames[winnerPos]} won Trick ${trickNumber}!`}
+              </span>
+            </motion.div>
+          ) : actionMessage ? (
             <motion.div
               key={actionMessage}
+              id="trick-action-message"
               initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 2 }}
@@ -367,7 +350,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
             >
               {actionMessage}
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
       </div>
     </div>

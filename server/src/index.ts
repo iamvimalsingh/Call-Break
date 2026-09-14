@@ -36,8 +36,8 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
       return;
     }
 
-    // Only handle CallBreak WebSocket endpoints (/ws or standalone root)
-    if (pathname === '/ws' || pathname === '/ws/' || pathname === '/') {
+    // Only handle CallBreak WebSocket endpoints (/ws or /ws/)
+    if (pathname === '/ws' || pathname === '/ws/') {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request);
       });

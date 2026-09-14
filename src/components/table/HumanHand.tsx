@@ -144,7 +144,7 @@ export const HumanHand: React.FC<HumanHandProps> = ({
   const availWidth = Math.max(300, containerWidth - sideSafety * 2);
 
   // Minimum exposed width on the left of each card so the rank number (especially "10", "Q", "K", "A") and suit are 100% visible
-  const minVisibleStep = isMobile ? (containerWidth < 380 ? 21 : 23) : 24;
+  const minVisibleStep = isMobile ? (containerWidth < 360 ? 22 : 24) : 25;
 
   let overlapPx = 18;
   if (n > 1) {

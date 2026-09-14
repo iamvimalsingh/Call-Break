@@ -5,14 +5,30 @@
  */
 
 import { TestHarness } from './testHarness';
-import fs from 'fs';
-import path from 'path';
 import { cleanAndSanitizeWebSocketUrl } from '../services/multiplayer/MultiplayerClient';
+
+// Dynamically obtain node modules in Node runtime without triggering Vite browser bundling externalization
+const getNodeFsAndPath = () => {
+  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    try {
+      const g = globalThis as any;
+      const req = (typeof module !== 'undefined' && (module as any).require) || g.require;
+      if (typeof req === 'function') {
+        return { fs: req('fs'), path: req('path') };
+      }
+    } catch {
+      // Browser or sandboxed runtime
+    }
+  }
+  return { fs: null, path: null };
+};
 
 export function buildPhase14NetlifyPWATestSuite(): TestHarness {
   const harness = new TestHarness();
+  const { fs, path } = getNodeFsAndPath();
 
   harness.register('Phase 14 PWA', 'Manifest file exists with valid JSON and required fields', () => {
+    if (!fs || !path) return;
     const manifestPath = path.resolve(process.cwd(), 'public/manifest.webmanifest');
     if (!fs.existsSync(manifestPath)) {
       throw new Error(`Manifest not found at ${manifestPath}`);
@@ -33,6 +49,7 @@ export function buildPhase14NetlifyPWATestSuite(): TestHarness {
   });
 
   harness.register('Phase 14 PWA', 'Required icon image assets exist with non-zero size', () => {
+    if (!fs || !path) return;
     const requiredIcons = [
       'pwa-192x192.png',
       'pwa-512x512.png',
@@ -55,6 +72,7 @@ export function buildPhase14NetlifyPWATestSuite(): TestHarness {
   });
 
   harness.register('Phase 14 Netlify', 'Netlify redirects and netlify.toml exist for SPA fallback', () => {
+    if (!fs || !path) return;
     const redirectsPath = path.resolve(process.cwd(), 'public/_redirects');
     if (!fs.existsSync(redirectsPath)) {
       throw new Error(`Netlify _redirects missing at ${redirectsPath}`);
@@ -75,6 +93,7 @@ export function buildPhase14NetlifyPWATestSuite(): TestHarness {
   });
 
   harness.register('Phase 14 Production', 'Vite configuration includes VitePWA plugin', () => {
+    if (!fs || !path) return;
     const viteConfigPath = path.resolve(process.cwd(), 'vite.config.ts');
     const viteConfig = fs.readFileSync(viteConfigPath, 'utf8');
     if (!viteConfig.includes('VitePWA') || !viteConfig.includes('vite-plugin-pwa')) {
@@ -83,6 +102,7 @@ export function buildPhase14NetlifyPWATestSuite(): TestHarness {
   });
 
   harness.register('Phase 14 Production', 'Index.html contains PWA links, meta tags, and responsive viewport-fit', () => {
+    if (!fs || !path) return;
     const indexPath = path.resolve(process.cwd(), 'index.html');
     const indexContent = fs.readFileSync(indexPath, 'utf8');
     if (!indexContent.includes('manifest.webmanifest')) {
