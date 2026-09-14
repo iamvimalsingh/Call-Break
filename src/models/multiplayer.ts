@@ -8,8 +8,11 @@ import { Card } from './card';
 import { GameState } from './gameState';
 import { GameEvent } from './events';
 
+export type PlayerSeatId = 'P1' | 'P2' | 'P3' | 'P4';
+
 export interface RoomParticipant {
   id: string;
+  playerId?: PlayerSeatId;
   name: string;
   position: PlayerPosition;
   isHost: boolean;
@@ -45,6 +48,7 @@ export interface ToastPayload {
 
 export interface JoinRequestSeatOption {
   seat: PlayerPosition;
+  seatId?: PlayerSeatId;
   type: 'auto_play' | 'bot';
   label: string;
 }

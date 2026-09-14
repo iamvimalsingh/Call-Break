@@ -14,6 +14,7 @@ import { sortHand } from '../../src/core/deck/cardUtils';
 import { CallBreakRulesEngine } from '../../src/core/rules/CallBreakRulesEngine';
 import { ScoringEngine } from '../../src/core/scoring/ScoringEngine';
 import { MediumBotStrategy } from '../../src/core/bot/MediumBotStrategy';
+import { BiddingContext, PlayCardContext } from '../../src/core/contracts/IBotStrategy';
 import { GameStateStore } from '../../src/core/state/gameStore';
 import { LocalGameController } from '../../src/core/controller/LocalGameController';
 import { createInitialGameState } from '../../src/core/state/initialState';
@@ -42,6 +43,7 @@ export class AuthoritativeGameController {
   private readonly stateListeners: ((state: GameState) => void)[] = [];
   private readonly timerListeners: ((payload: TurnTimerPayload) => void)[] = [];
   private readonly rebidListeners: ((payload: { totalBids: number; message: string }) => void)[] = [];
+  private readonly timeoutTakeoverListeners: ((position: PlayerPosition) => void)[] = [];
 
   private botTimer: NodeJS.Timeout | null = null;
   private turnTimerInterval: NodeJS.Timeout | null = null;
@@ -126,6 +128,24 @@ export class AuthoritativeGameController {
       const idx = this.rebidListeners.indexOf(listener);
       if (idx >= 0) this.rebidListeners.splice(idx, 1);
     };
+  }
+
+  public onTimeoutTakeover(listener: (position: PlayerPosition) => void): () => void {
+    this.timeoutTakeoverListeners.push(listener);
+    return () => {
+      const idx = this.timeoutTakeoverListeners.indexOf(listener);
+      if (idx >= 0) this.timeoutTakeoverListeners.splice(idx, 1);
+    };
+  }
+
+  private notifyTimeoutTakeover(position: PlayerPosition): void {
+    for (const listener of this.timeoutTakeoverListeners) {
+      try {
+        listener(position);
+      } catch (err) {
+        console.error('Error in timeout takeover listener:', err);
+      }
+    }
   }
 
   private broadcastTimerTick(
@@ -285,44 +305,102 @@ export class AuthoritativeGameController {
   }
 
   /**
-   * Executes authoritative auto-timeout action when 45s + 15s expires:
-   * - Bidding Phase: Auto-submit safe bid calculated via MediumBotStrategy or bid 1.
-   * - Playing Phase: Auto-play the lowest valid legal card from CallBreakRulesEngine.
+   * Executes authoritative auto-timeout action when 45s + 15s (60s total) expires:
+   * 1. Converts the seat's controller state to isBot: true (PlayerType.BOT) keeping cards, bid, and tricks intact.
+   * 2. Requests an optimal legal move from the strong bot strategy (with lowest legal card as emergency fallback).
+   * 3. Plays that move immediately without stalling.
+   * 4. Subsequent turns for this seat continue automatically under bot control.
    */
   private handleTurnTimeout(position: PlayerPosition): void {
     const state = this.store.getState();
     if (state.currentPlayer !== position) return;
 
-    if (state.status === GameStatus.BIDDING) {
-      const player = state.players[position];
+    // 1. Convert Seat to Bot Control:
+    // Transition seat's player state to PlayerType.BOT, keeping ID, name, hand, bid, tricks won, score intact
+    const existingPlayer = state.players[position];
+    if (existingPlayer && existingPlayer.type !== PlayerType.BOT) {
+      const updatedPlayer: PlayerState = {
+        ...existingPlayer,
+        type: PlayerType.BOT,
+      };
+      this.store.reset({
+        ...state,
+        players: {
+          ...state.players,
+          [position]: updatedPlayer,
+        },
+      });
+      // Bind strong bot strategy to this seat for all subsequent turns
+      this.controller.bindBotStrategy(position, new MediumBotStrategy());
+      this.notifyTimeoutTakeover(position);
+    }
+
+    // 2. Play legal bid or card immediately using strong bot strategy
+    const currentState = this.store.getState();
+    const player = currentState.players[position];
+    if (!player) return;
+
+    if (currentState.status === GameStatus.BIDDING) {
       let safeBid = 1;
       try {
         const existingBids: Record<PlayerPosition, number | null> = {
-          [PlayerPosition.SOUTH]: state.players[PlayerPosition.SOUTH].currentBid,
-          [PlayerPosition.WEST]: state.players[PlayerPosition.WEST].currentBid,
-          [PlayerPosition.NORTH]: state.players[PlayerPosition.NORTH].currentBid,
-          [PlayerPosition.EAST]: state.players[PlayerPosition.EAST].currentBid,
+          [PlayerPosition.SOUTH]: currentState.players[PlayerPosition.SOUTH].currentBid,
+          [PlayerPosition.WEST]: currentState.players[PlayerPosition.WEST].currentBid,
+          [PlayerPosition.NORTH]: currentState.players[PlayerPosition.NORTH].currentBid,
+          [PlayerPosition.EAST]: currentState.players[PlayerPosition.EAST].currentBid,
         };
         const strategy = new MediumBotStrategy();
-        safeBid = strategy.decideBid(player.hand, {
+        const decided = strategy.decideBid(player.hand, {
           position,
-          dealer: state.dealer,
+          dealer: currentState.dealer,
           existingBids,
-          trumpSuit: state.config.trumpSuit,
+          trumpSuit: currentState.config.trumpSuit,
         });
+        safeBid = typeof decided === 'number' ? decided : 1;
       } catch {
         safeBid = 1;
       }
-      const finalBid = Math.max(state.config.minBid, Math.min(state.config.maxBid, safeBid || 1));
+      const finalBid = Math.max(currentState.config.minBid, Math.min(currentState.config.maxBid, safeBid || 1));
       this.submitBid(position, finalBid);
-    } else if (state.status === GameStatus.PLAYING) {
-      const player = state.players[position];
+    } else if (currentState.status === GameStatus.PLAYING) {
       const rulesEngine = new CallBreakRulesEngine();
-      const legalMoves = rulesEngine.getLegalMoves(player.hand, state.currentTrick, state.config.trumpSuit);
+      const legalMoves = rulesEngine.getLegalMoves(player.hand, currentState.currentTrick, currentState.config.trumpSuit);
       if (legalMoves.length > 0) {
-        // Sort lowest rank/value card first
-        const sorted = [...legalMoves].sort((a, b) => a.value - b.value);
-        this.playCard(position, sorted[0]);
+        let cardToPlay: Card | null = null;
+        try {
+          const remainingCardsCount: Record<PlayerPosition, number> = {
+            [PlayerPosition.SOUTH]: currentState.players[PlayerPosition.SOUTH].hand.length,
+            [PlayerPosition.WEST]: currentState.players[PlayerPosition.WEST].hand.length,
+            [PlayerPosition.NORTH]: currentState.players[PlayerPosition.NORTH].hand.length,
+            [PlayerPosition.EAST]: currentState.players[PlayerPosition.EAST].hand.length,
+          };
+          const context: PlayCardContext = {
+            position,
+            hand: player.hand,
+            legalMoves,
+            currentTrick: currentState.currentTrick,
+            trumpSuit: currentState.config.trumpSuit,
+            playerBid: player.currentBid ?? 1,
+            playerTricksWon: player.tricksWon,
+            remainingCardsCount,
+            completedTricks: currentState.completedTricks,
+          };
+          const strategy = new MediumBotStrategy();
+          const decision = strategy.decideCardPlay(context);
+          if (decision && legalMoves.some((c) => c.suit === decision.suit && c.rank === decision.rank)) {
+            cardToPlay = decision;
+          }
+        } catch {
+          cardToPlay = null;
+        }
+
+        // Emergency fallback if strategy fails: lowest legal card
+        if (!cardToPlay) {
+          const sorted = [...legalMoves].sort((a, b) => a.value - b.value);
+          cardToPlay = sorted[0];
+        }
+
+        this.playCard(position, cardToPlay);
       }
     }
   }

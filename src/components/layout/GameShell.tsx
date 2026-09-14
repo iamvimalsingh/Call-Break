@@ -1060,8 +1060,8 @@ export const GameShell: React.FC = () => {
       {/* Host Join Request Approval Modal for Mid-Game Joins */}
       <JoinRequestModal
         request={joinRequest}
-        onRespond={(reqId, accept) => {
-          sharedMultiplayerClient.respondJoinRequest(reqId, accept);
+        onRespond={(reqId, accept, targetSeat) => {
+          sharedMultiplayerClient.respondJoinRequest(reqId, accept, targetSeat);
           setJoinRequest(null);
         }}
       />

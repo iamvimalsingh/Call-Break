@@ -3,6 +3,7 @@
  * The visual felt table layout hosting 4 player seats, trick arena,
  * bidding overlay, and human hand tray.
  * Responsive mobile-first design with sound coordination and smooth phase animations.
+ * Clean vertical 2-line center HUD stacks above and below the trick arena.
  * Phase 8 Animations & Sound
  */
 
@@ -19,8 +20,6 @@ import { BiddingControls } from './BiddingControls';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
-import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
-import { Copy, Check, Users } from 'lucide-react';
 
 export interface GameTableProps {
   state: GameState;
@@ -45,31 +44,6 @@ export const GameTable: React.FC<GameTableProps> = ({
   const eastPlayer = state.players[PlayerPosition.EAST];
   const prefersReducedMotion = useReducedMotion();
   const lastDealtRoundRef = useRef<number>(0);
-  const [copiedRoomCode, setCopiedRoomCode] = React.useState(false);
-  const [roomCode, setRoomCode] = React.useState<string | null>(() => {
-    const r = sharedMultiplayerClient.getRoomState();
-    return r ? r.roomCode : null;
-  });
-
-  useEffect(() => {
-    const unsubRoom = sharedMultiplayerClient.onRoomState((r) => {
-      setRoomCode(r ? r.roomCode : null);
-    });
-    return () => {
-      unsubRoom();
-    };
-  }, []);
-
-  const handleCopyCode = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!roomCode) return;
-    soundManager.play('click');
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(roomCode).catch(() => {});
-    }
-    setCopiedRoomCode(true);
-    setTimeout(() => setCopiedRoomCode(false), 2000);
-  };
 
   // Trigger dealing sound effect when a round begins
   useEffect(() => {
@@ -158,30 +132,6 @@ export const GameTable: React.FC<GameTableProps> = ({
     return `${winnerName} won Trick ${lastCompletedTrick.trickNumber}!`;
   }, [isShowingCompleted, winnerPos, lastCompletedTrick, playerNames]);
 
-  const shouldShowLastActionMessage = React.useMemo(() => {
-    if (!state.lastActionMessage) return false;
-    if (
-      winnerToastText &&
-      (state.lastActionMessage.toLowerCase().includes('won trick') ||
-        state.lastActionMessage.toLowerCase().includes('wins trick'))
-    ) {
-      return false;
-    }
-    return true;
-  }, [state.lastActionMessage, winnerToastText]);
-
-  const totalBids = React.useMemo(() => {
-    const players = [
-      state.players[PlayerPosition.SOUTH],
-      state.players[PlayerPosition.WEST],
-      state.players[PlayerPosition.NORTH],
-      state.players[PlayerPosition.EAST],
-    ];
-    const allBidded = players.every((p) => p && p.currentBid !== null && p.currentBid >= 1);
-    if (!allBidded && state.status !== GameStatus.PLAYING) return null;
-    return players.reduce((sum, p) => sum + (p?.currentBid ?? 0), 0);
-  }, [state.players, state.status]);
-
   const leaderScoreText = React.useMemo(() => {
     const scores = state.cumulativeScores;
     const entries = (Object.keys(scores) as PlayerPosition[]).map((pos) => ({
@@ -202,6 +152,27 @@ export const GameTable: React.FC<GameTableProps> = ({
     }
     return `Leader: ${top.name} (${scoreFormatted})`;
   }, [state.cumulativeScores, playerNames]);
+
+  const actionLine1Text = React.useMemo(() => {
+    if (state.lastActionMessage) {
+      const msg = state.lastActionMessage.trim();
+      const currentTurnName = playerNames[state.currentPlayer] || 'Opponent';
+      if (
+        state.status === GameStatus.PLAYING &&
+        !msg.toLowerCase().includes('turn') &&
+        !msg.toLowerCase().includes('wins') &&
+        !msg.toLowerCase().includes('won')
+      ) {
+        return `${msg}. Turn: ${currentTurnName}`;
+      }
+      return msg;
+    }
+    if (state.status === GameStatus.PLAYING) {
+      const currentTurnName = playerNames[state.currentPlayer] || 'Opponent';
+      return `Turn: ${currentTurnName}`;
+    }
+    return null;
+  }, [state.lastActionMessage, state.status, state.currentPlayer, playerNames]);
 
   const turnInstruction = React.useMemo(() => {
     if (state.status === GameStatus.BIDDING) {
@@ -232,185 +203,25 @@ export const GameTable: React.FC<GameTableProps> = ({
       id="callbreak-game-table-container"
       className="relative w-full h-full flex-1 flex flex-col items-center justify-center min-h-0 overflow-hidden select-none"
     >
-      {/* Table Felt Surface */}
+      {/* Table Felt Surface - Scaled down for breathing room */}
       <motion.div
         id="table-felt"
         initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={transitions.springSmooth}
-        className="relative w-full h-full sm:max-w-[94%] md:max-w-[92%] lg:max-w-[93%] xl:max-w-4xl sm:max-h-[94%] md:max-h-[92%] lg:max-h-[93%] flex flex-col items-center rounded-2xl sm:rounded-[2.25rem] md:rounded-[2.75rem] bg-gradient-to-b from-[#062418]/95 via-[#041a11]/95 to-[#020e09]/98 border sm:border-4 md:border-[5px] border-[#1f382a] ring-1 ring-emerald-400/30 ring-offset-1 sm:ring-offset-4 ring-offset-stone-950 shadow-[0_20px_70px_rgba(0,0,0,0.85)] p-0.5 sm:p-1.5 md:p-2.5 min-h-0 overflow-hidden"
+        className="relative w-full h-full sm:max-w-[92%] md:max-w-[90%] lg:max-w-[88%] xl:max-w-4xl sm:max-h-[92%] md:max-h-[90%] flex flex-col items-center rounded-2xl sm:rounded-[2.25rem] md:rounded-[2.5rem] bg-gradient-to-b from-[#062418]/95 via-[#041a11]/95 to-[#020e09]/98 border sm:border-4 md:border-[5px] border-[#1f382a] ring-1 ring-emerald-400/30 ring-offset-1 sm:ring-offset-2 ring-offset-stone-950 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-1 sm:p-2 min-h-0 overflow-hidden"
       >
         {/* Subtle Felt Texture & Outer Cushion Rail Accent */}
-        <div className="absolute inset-1 sm:inset-3 rounded-xl sm:rounded-[2.75rem] border border-emerald-400/15 pointer-events-none" />
-        <div className="absolute inset-2 sm:inset-6 rounded-lg sm:rounded-[2.5rem] border border-emerald-500/5 pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/15 via-emerald-950/20 to-black/60 pointer-events-none rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem]" />
+        <div className="absolute inset-1 sm:inset-3 rounded-xl sm:rounded-[2.25rem] border border-emerald-400/15 pointer-events-none" />
+        <div className="absolute inset-2 sm:inset-5 rounded-lg sm:rounded-[2rem] border border-emerald-500/5 pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/15 via-emerald-950/20 to-black/60 pointer-events-none rounded-2xl sm:rounded-[2rem] md:rounded-[2.5rem]" />
 
-        {/* ==================================================================== */}
-        {/* 1. DEDICATED DESKTOP HUD OVERLAY LAYER (4 FIXED CORNER SLOTS)        */}
-        {/* ==================================================================== */}
-        <div
-          id="desktop-hud-overlay"
-          className="absolute inset-0 pointer-events-none z-30 overflow-hidden"
-          aria-label="Table HUD Overlay"
-        >
-          {/* Corner 1: Top-Left (Match & Trick Progress) */}
-          <div
-            id="hud-zone-top-left"
-            className="absolute top-2.5 left-3 sm:top-3.5 sm:left-4 md:top-4 md:left-5 lg:top-5 lg:left-6 pointer-events-auto"
-          >
-            <div
-              id="badge-round-trick"
-              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-emerald-500/40 text-emerald-300 shadow-lg text-[10px] sm:text-xs font-mono font-bold tracking-tight"
-            >
-              <span className="text-emerald-400 text-xs sm:text-sm">📍</span>
-              <span>Round {state.currentRound}/{state.config.totalRounds}</span>
-              <span className="text-stone-500 font-normal">•</span>
-              <span>Trick {trickNumber}/13</span>
-            </div>
-          </div>
-
-          {/* Corner 2: Top-Right (Dedicated Temporary Winner Toast slot OR Leader & Telemetry) */}
-          <div
-            id="hud-zone-top-right"
-            className="absolute top-2.5 right-3 sm:top-3.5 sm:right-4 md:top-4 md:right-5 lg:top-5 lg:right-6 pointer-events-auto"
-          >
-            <AnimatePresence mode="wait">
-              {winnerToastText ? (
-                <motion.div
-                  key={`winner-toast-${lastCompletedTrick?.trickNumber}-${winnerPos}`}
-                  id="trick-winner-toast"
-                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.9, y: -4 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.92, y: -4 }}
-                  transition={transitions.springFast}
-                  className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-gradient-to-r from-stone-950 via-[#261c06] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_25px_rgba(0,0,0,0.9),0_0_20px_rgba(251,191,36,0.45)] text-xs sm:text-sm font-bold ring-2 ring-amber-400/40 tracking-wide pointer-events-none"
-                >
-                  <span className="text-amber-400 text-sm sm:text-base shrink-0">🏆</span>
-                  <span className="truncate max-w-[180px] xs:max-w-[220px] sm:max-w-[280px]">
-                    {winnerToastText}
-                  </span>
-                </motion.div>
-              ) : leaderScoreText ? (
-                <motion.div
-                  key="badge-leader-score"
-                  id="badge-score-leader"
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: -2 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -2 }}
-                  transition={transitions.springFast}
-                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-amber-500/40 text-stone-200 shadow-lg text-[10px] sm:text-xs font-medium"
-                >
-                  <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
-                  <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-[220px] font-semibold">
-                    {leaderScoreText}
-                  </span>
-                  {totalBids !== null && (
-                    <>
-                      <span className="text-stone-500 font-normal hidden xs:inline">•</span>
-                      <span className="text-amber-300/90 font-mono text-[9.5px] sm:text-xs hidden xs:inline whitespace-nowrap">
-                        Bids: <strong className="text-amber-300 font-bold">{totalBids}</strong>/13
-                      </span>
-                    </>
-                  )}
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </div>
-
-          {/* Corner 3: Bottom-Left (Last Action / Live Game Event) */}
-          <div
-            id="hud-zone-bottom-left"
-            className="absolute bottom-20 xs:bottom-22 sm:bottom-24 md:bottom-28 lg:bottom-32 left-3 sm:left-4 md:left-5 lg:left-6 pointer-events-auto max-w-[180px] xs:max-w-[220px] sm:max-w-[260px] md:max-w-[300px]"
-          >
-            <AnimatePresence>
-              {shouldShowLastActionMessage && state.lastActionMessage && (
-                <motion.div
-                  key={state.lastActionMessage}
-                  id="trick-action-message"
-                  initial={prefersReducedMotion ? false : { opacity: 0, x: -10, y: 4 }}
-                  animate={{ opacity: 1, x: 0, y: 0 }}
-                  exit={{ opacity: 0, x: -6, y: 2 }}
-                  transition={transitions.springFast}
-                  className="flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl bg-stone-950/90 backdrop-blur-sm border border-stone-700/80 text-[9px] xs:text-[10px] sm:text-xs text-stone-200 shadow-xl"
-                >
-                  <span className="text-amber-400 text-xs shrink-0">💬</span>
-                  <span className="truncate font-mono">{state.lastActionMessage}</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Corner 4: Bottom-Right (Current Action / Turn Instruction & Room Status) */}
-          <div
-            id="hud-zone-bottom-right"
-            className="absolute bottom-20 xs:bottom-22 sm:bottom-24 md:bottom-28 lg:bottom-32 right-3 sm:right-4 md:right-5 lg:right-6 pointer-events-auto flex flex-col items-end gap-1.5 max-w-[220px] xs:max-w-[260px] sm:max-w-[300px] md:max-w-[340px]"
-          >
-            {/* Turn Instruction HUD */}
-            <AnimatePresence mode="wait">
-              {turnInstruction && (
-                <motion.div
-                  key={turnInstruction.text}
-                  id="badge-turn-instruction"
-                  initial={prefersReducedMotion ? false : { opacity: 0, x: 10, y: 4 }}
-                  animate={{ opacity: 1, x: 0, y: 0 }}
-                  exit={{ opacity: 0, x: 6, y: 2 }}
-                  transition={transitions.springFast}
-                  className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl backdrop-blur-sm shadow-xl text-[9px] xs:text-[10px] sm:text-xs font-semibold whitespace-nowrap ${
-                    turnInstruction.isHuman
-                      ? 'bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-400/30'
-                      : 'bg-stone-950/90 border border-stone-700/80 text-stone-300'
-                  }`}
-                >
-                  <span className="text-xs shrink-0">{turnInstruction.icon}</span>
-                  <span className="truncate">{turnInstruction.text}</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Multiplayer Room Code Badge */}
-            <AnimatePresence>
-              {(roomCode || state.mode === GameMode.ONLINE_MULTIPLAYER) && (
-                <motion.div
-                  id="badge-room-status"
-                  initial={prefersReducedMotion ? false : { opacity: 0, x: 10, y: 4 }}
-                  animate={{ opacity: 1, x: 0, y: 0 }}
-                  exit={{ opacity: 0, x: 6, y: 2 }}
-                  transition={transitions.springFast}
-                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1 rounded-xl bg-stone-950/90 backdrop-blur-sm border border-emerald-500/40 text-[9px] xs:text-[10px] sm:text-xs text-emerald-300 shadow-xl pointer-events-auto"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                  <Users className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span className="font-mono font-bold tracking-tight">
-                    {roomCode ? `Room ${roomCode}` : 'Live Match'}
-                  </span>
-                  {roomCode && (
-                    <button
-                      type="button"
-                      onClick={handleCopyCode}
-                      className="ml-0.5 p-0.5 hover:bg-emerald-950/80 rounded text-emerald-300 hover:text-emerald-100 transition-colors cursor-pointer"
-                      title="Copy room code"
-                    >
-                      {copiedRoomCode ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                    </button>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* ==================================================================== */}
-        {/* 2. GAMEPLAY & PLAYER SEATS LAYER (CROSS + LAYOUT)                   */}
-        {/* ==================================================================== */}
+        {/* Gameplay & Player Seats Layer (Clean Vertical Flow with Zero Corner Collisions) */}
         <div
           id="gameplay-seats-layer"
           className="relative w-full h-full flex flex-col items-center justify-between z-10 min-h-0"
         >
-          {/* 1. North Player Zone */}
+          {/* 1. North Player Zone - Anchored inside top felt area */}
           <div id="zone-north-player" className="w-full flex justify-center z-10 pt-1 sm:pt-2 shrink-0">
             <PlayerSlot
               player={northPlayer}
@@ -420,8 +231,38 @@ export const GameTable: React.FC<GameTableProps> = ({
             />
           </div>
 
-          {/* 2. Middle Zone (West Player, Center Trick Arena / Bidding Center, East Player) */}
-          <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-4 md:px-8 lg:px-12 my-0 xs:my-0.5 sm:my-1">
+          {/* 2. Upper 2-Line HUD Stack (Between North Player & Trick Circle) */}
+          <div
+            id="hud-upper-stack"
+            className="flex flex-col items-center gap-0.5 sm:gap-1 my-0.5 z-10 shrink-0 pointer-events-none"
+          >
+            {/* Line 1: Round X/5 • Trick Y/13 */}
+            <div
+              id="badge-round-trick"
+              className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-950/80 backdrop-blur-sm border border-emerald-500/35 text-emerald-300 shadow-md text-[11px] sm:text-xs font-mono font-bold tracking-tight"
+            >
+              <span className="text-emerald-400 text-xs sm:text-sm">📍</span>
+              <span>Round {state.currentRound}/{state.config.totalRounds}</span>
+              <span className="text-stone-500 font-normal">•</span>
+              <span>Trick {trickNumber}/13</span>
+            </div>
+
+            {/* Line 2: Leader: [PlayerName] ([Score] pts) */}
+            {leaderScoreText ? (
+              <div
+                id="badge-score-leader"
+                className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-950/80 backdrop-blur-sm border border-amber-500/35 text-stone-200 shadow-md text-[11px] sm:text-xs font-medium"
+              >
+                <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
+                <span className="truncate max-w-[240px] xs:max-w-[280px] sm:max-w-[320px] font-semibold">
+                  {leaderScoreText}
+                </span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* 3. Middle Zone (West Player, Center Trick Arena / Bidding Center, East Player) */}
+          <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-4 md:px-6 my-0">
             {/* West Player */}
             <div className="w-auto flex justify-start shrink-0">
               <PlayerSlot
@@ -432,8 +273,8 @@ export const GameTable: React.FC<GameTableProps> = ({
               />
             </div>
 
-            {/* Center Arena: Bidding Modal in Center Felt OR Trick Circle */}
-            <div className="flex-1 flex items-center justify-center min-w-0 px-1 sm:px-2 relative">
+            {/* Center Arena */}
+            <div className="flex-1 flex items-center justify-center min-w-0 px-1 relative">
               <AnimatePresence mode="wait">
                 {isBiddingPhase ? (
                   <motion.div
@@ -467,12 +308,8 @@ export const GameTable: React.FC<GameTableProps> = ({
                     <CenterPlayArea
                       currentTrick={state.currentTrick}
                       lastCompletedTrick={lastCompletedTrick}
-                      actionMessage={state.lastActionMessage}
                       playerNames={playerNames}
                       isBidding={isBiddingPhase}
-                      currentRound={state.currentRound}
-                      totalRounds={state.config.totalRounds}
-                      leaderScoreText={leaderScoreText}
                     />
                   </motion.div>
                 )}
@@ -490,10 +327,57 @@ export const GameTable: React.FC<GameTableProps> = ({
             </div>
           </div>
 
-          {/* 3. South Zone: Player Badge & 13-Card Hand Tray */}
-          <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-1.5 sm:mt-2.5 md:mt-3 overflow-visible">
+          {/* 4. Lower 2-Line HUD Stack (Between Trick Circle & South Player) */}
+          <div
+            id="hud-lower-stack"
+            className="flex flex-col items-center gap-0.5 sm:gap-1 my-0.5 z-10 shrink-0 pointer-events-none"
+          >
+            {/* Line 1: [PlayerName] played [Card]. Turn: [TurnPlayer] (or trick winner celebration) */}
+            {winnerToastText ? (
+              <motion.div
+                key={`winner-toast-${lastCompletedTrick?.trickNumber}-${winnerPos}`}
+                id="trick-winner-toast"
+                initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.92, y: 2 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-gradient-to-r from-stone-950 via-[#261c06] to-stone-950 border border-amber-400 text-amber-200 shadow-md text-[11px] sm:text-xs font-bold"
+              >
+                <span className="text-amber-400 text-xs sm:text-sm shrink-0">🏆</span>
+                <span className="truncate max-w-[260px] xs:max-w-[300px] sm:max-w-[360px]">
+                  {winnerToastText}
+                </span>
+              </motion.div>
+            ) : actionLine1Text ? (
+              <div
+                id="trick-action-message"
+                className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-stone-950/80 backdrop-blur-sm border border-stone-700/80 text-[11px] sm:text-xs text-stone-200 shadow-md"
+              >
+                <span className="text-amber-400 text-xs shrink-0">💬</span>
+                <span className="truncate font-mono max-w-[260px] xs:max-w-[300px] sm:max-w-[360px]">
+                  {actionLine1Text}
+                </span>
+              </div>
+            ) : null}
+
+            {/* Line 2: Turn Instruction */}
+            {turnInstruction && (
+              <div
+                id="badge-turn-instruction"
+                className={`flex items-center gap-1.5 px-3 py-0.5 rounded-full backdrop-blur-sm shadow-md text-[11px] sm:text-xs font-semibold whitespace-nowrap ${
+                  turnInstruction.isHuman
+                    ? 'bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-400/30'
+                    : 'bg-stone-950/80 border border-stone-700/80 text-stone-300'
+                }`}
+              >
+                <span className="text-xs shrink-0">{turnInstruction.icon}</span>
+                <span className="truncate max-w-[260px] xs:max-w-[300px] sm:max-w-[360px]">{turnInstruction.text}</span>
+              </div>
+            )}
+          </div>
+
+          {/* 5. South Zone: Player Badge & 13-Card Hand Tray */}
+          <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 shrink-0 overflow-visible">
             {/* South Player Header Badge */}
-            <div className="mb-0.5 sm:mb-1 shrink-0">
+            <div className="mb-0.5 shrink-0">
               <PlayerSlot
                 player={southPlayer}
                 position={PlayerPosition.SOUTH}

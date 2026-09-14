@@ -187,7 +187,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       } else if (statusPayload.status === 'DECLINED') {
         setIsJoining(false);
         setPendingApprovalMsg(null);
-        setJoinError(statusPayload.message || 'Host declined your request to join.');
+        setJoinError(statusPayload.message || 'Host declined your join request.');
       }
     });
 

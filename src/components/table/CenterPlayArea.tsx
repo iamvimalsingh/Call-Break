@@ -3,6 +3,7 @@
  * Renders the 4-position trick resolution zone displaying played cards,
  * card play animations from seats to center, trick winner highlight,
  * and trick collection animations.
+ * Scaled down 10-12% for generous vertical table clearance.
  * Phase 8 Animations & Sound
  */
 
@@ -19,12 +20,8 @@ import { transitions } from '../../core/animation/animationConfig';
 export interface CenterPlayAreaProps {
   currentTrick: TrickState;
   lastCompletedTrick: CompletedTrick | null;
-  actionMessage?: string;
   playerNames: Record<PlayerPosition, string>;
   isBidding?: boolean;
-  currentRound?: number;
-  totalRounds?: number;
-  leaderScoreText?: string;
 }
 
 export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
@@ -40,7 +37,6 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
   const isShowingCompleted = currentTrick.cards.length === 0 && lastCompletedTrick !== null;
   const displayCards = isShowingCompleted ? lastCompletedTrick.cards : currentTrick.cards;
   const leadSuit = isShowingCompleted ? lastCompletedTrick.leadSuit : currentTrick.leadSuit;
-  const trickNumber = isShowingCompleted ? lastCompletedTrick.trickNumber : currentTrick.trickNumber;
   const winnerPos = isShowingCompleted ? lastCompletedTrick.winner : null;
 
   const leadSuitInfo = leadSuit ? SUIT_CONFIG[leadSuit] : null;
@@ -66,33 +62,33 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
     if (prefersReducedMotion) return { x: 0, y: 0 };
     switch (pos) {
       case PlayerPosition.NORTH:
-        return { x: 0, y: -40 };
+        return { x: 0, y: -30 };
       case PlayerPosition.SOUTH:
-        return { x: 0, y: 40 };
+        return { x: 0, y: 30 };
       case PlayerPosition.WEST:
-        return { x: -40, y: 0 };
+        return { x: -30, y: 0 };
       case PlayerPosition.EAST:
-        return { x: 40, y: 0 };
+        return { x: 30, y: 0 };
     }
   };
 
   return (
     <div className="flex flex-col items-center justify-center shrink-0 mx-auto select-none relative">
-      {/* Central Trick Resolution Ring */}
+      {/* Central Trick Resolution Ring - Scaled down 10-12% for breathing room */}
       <div
         id="center-trick-area"
         className={`relative ${
           isBidding
-            ? 'w-36 h-36 xs:w-42 xs:h-42 sm:w-48 sm:h-48 max-w-[220px] max-h-[220px]'
-            : 'w-[230px] h-[230px] xs:w-[268px] xs:h-[268px] sm:w-[308px] sm:h-[308px] md:w-[346px] md:h-[346px] lg:w-[380px] lg:h-[380px] max-w-[390px] max-h-[390px]'
-        } rounded-full bg-gradient-to-b from-[#08291a]/95 via-[#041d13]/90 to-[#02120b]/98 border-2 border-emerald-500/35 flex items-center justify-center shadow-[inset_0_0_40px_rgba(0,0,0,0.7),0_15px_35px_rgba(0,0,0,0.5)] ring-1 ring-emerald-400/25 transition-all duration-300 shrink-0`}
+            ? 'w-28 h-28 xs:w-32 xs:h-32 sm:w-36 sm:h-36 max-w-[160px] max-h-[160px]'
+            : 'w-[190px] h-[190px] xs:w-[220px] xs:h-[220px] sm:w-[250px] sm:h-[250px] md:w-[280px] md:h-[280px] lg:w-[310px] lg:h-[310px] max-w-[340px] sm:max-w-[360px] md:max-w-[380px] max-h-[380px]'
+        } rounded-full bg-gradient-to-b from-[#08291a]/95 via-[#041d13]/90 to-[#02120b]/98 border-2 border-emerald-500/35 flex items-center justify-center shadow-[inset_0_0_35px_rgba(0,0,0,0.7),0_10px_25px_rgba(0,0,0,0.5)] ring-1 ring-emerald-400/25 transition-all duration-300 shrink-0`}
       >
         {/* Decorative Outer Felt Rings and Crosshairs */}
-        <div className="absolute inset-1.5 sm:inset-3 rounded-full border border-emerald-400/15 pointer-events-none" />
-        <div className="absolute inset-6 sm:inset-10 rounded-full border border-dashed border-emerald-500/10 pointer-events-none" />
+        <div className="absolute inset-1 sm:inset-2.5 rounded-full border border-emerald-400/15 pointer-events-none" />
+        <div className="absolute inset-5 sm:inset-8 rounded-full border border-dashed border-emerald-500/10 pointer-events-none" />
 
         {/* --- North Slot --- */}
-        <div className="absolute top-1.5 xs:top-2 sm:top-2.5 z-10 flex flex-col items-center">
+        <div className="absolute top-1 sm:top-2 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {northPlayed ? (
               <motion.div
@@ -106,7 +102,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.NORTH ? (prefersReducedMotion ? 1 : 1.1) : 1,
+                  scale: winnerPos === PlayerPosition.NORTH ? (prefersReducedMotion ? 1 : 1.08) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -121,13 +117,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.NORTH]}
                   className={
                     winnerPos === PlayerPosition.NORTH
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.9)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-11 h-15 xs:w-12 xs:h-16.5 sm:w-13 sm:h-18 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.NORTH]}
               </div>
             )}
@@ -135,7 +131,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- South Slot --- */}
-        <div className="absolute bottom-1.5 xs:bottom-2 sm:bottom-2.5 z-10 flex flex-col items-center">
+        <div className="absolute bottom-1 sm:bottom-2 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {southPlayed ? (
               <motion.div
@@ -149,7 +145,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.SOUTH ? (prefersReducedMotion ? 1 : 1.1) : 1,
+                  scale: winnerPos === PlayerPosition.SOUTH ? (prefersReducedMotion ? 1 : 1.08) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -164,13 +160,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.SOUTH]}
                   className={
                     winnerPos === PlayerPosition.SOUTH
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.9)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-11 h-15 xs:w-12 xs:h-16.5 sm:w-13 sm:h-18 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.SOUTH]}
               </div>
             )}
@@ -178,7 +174,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- West Slot --- */}
-        <div className="absolute left-1.5 xs:left-2 sm:left-2.5 z-10 flex flex-col items-center">
+        <div className="absolute left-1 sm:left-2 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {westPlayed ? (
               <motion.div
@@ -192,7 +188,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.WEST ? (prefersReducedMotion ? 1 : 1.1) : 1,
+                  scale: winnerPos === PlayerPosition.WEST ? (prefersReducedMotion ? 1 : 1.08) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -207,13 +203,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.WEST]}
                   className={
                     winnerPos === PlayerPosition.WEST
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.9)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-11 h-15 xs:w-12 xs:h-16.5 sm:w-13 sm:h-18 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.WEST]}
               </div>
             )}
@@ -221,7 +217,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- East Slot --- */}
-        <div className="absolute right-1.5 xs:right-2 sm:right-2.5 z-10 flex flex-col items-center">
+        <div className="absolute right-1 sm:right-2 z-10 flex flex-col items-center">
           <AnimatePresence mode="wait">
             {eastPlayed ? (
               <motion.div
@@ -235,7 +231,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   opacity: 1,
                   x: 0,
                   y: 0,
-                  scale: winnerPos === PlayerPosition.EAST ? (prefersReducedMotion ? 1 : 1.1) : 1,
+                  scale: winnerPos === PlayerPosition.EAST ? (prefersReducedMotion ? 1 : 1.08) : 1,
                 }}
                 exit={
                   prefersReducedMotion
@@ -250,13 +246,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   badge={playerNames[PlayerPosition.EAST]}
                   className={
                     winnerPos === PlayerPosition.EAST
-                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.95)] brightness-110 z-30 transition-all'
+                      ? 'ring-2 sm:ring-4 ring-amber-400 border-2 border-amber-300 shadow-[0_0_20px_rgba(251,191,36,0.9)] brightness-110 z-30 transition-all'
                       : ''
                   }
                 />
               </motion.div>
             ) : (
-              <div className="w-12 h-17 xs:w-13 xs:h-18.5 sm:w-15 sm:h-21 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[9px] xs:text-[10px] sm:text-[11px] font-mono text-emerald-400/30">
+              <div className="w-11 h-15 xs:w-12 xs:h-16.5 sm:w-13 sm:h-18 rounded-lg border border-dashed border-emerald-500/20 bg-emerald-950/20 flex items-center justify-center text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-mono text-emerald-400/30">
                 {playerNames[PlayerPosition.EAST]}
               </div>
             )}
@@ -264,24 +260,16 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
         </div>
 
         {/* --- Center Info Disc --- */}
-        <div className="z-0 flex flex-col items-center justify-center text-center p-1 sm:p-2 max-w-[130px] xs:max-w-[150px] sm:max-w-[180px] pointer-events-none">
+        <div className="z-0 flex flex-col items-center justify-center text-center p-0.5 sm:p-1 max-w-[90px] xs:max-w-[110px] sm:max-w-[130px] pointer-events-none">
           <div key="trick-active-disc" className="flex flex-col items-center">
-            <div className="text-[8.5px] xs:text-[9.5px] sm:text-[11px] uppercase font-mono tracking-wider text-emerald-400 font-bold">
-              Trick {trickNumber}/13
-            </div>
-
             {leadSuitInfo ? (
-              <div className="mt-0.5 sm:mt-1 flex items-center gap-1 text-[8.5px] xs:text-[9.5px] sm:text-[11px] font-semibold text-white bg-stone-950/90 px-2 sm:px-2.5 py-0.5 rounded-full border border-stone-700/80 shadow-md">
+              <div className="flex items-center gap-1 text-[8px] xs:text-[9px] sm:text-[10px] font-semibold text-white bg-stone-950/90 px-2 py-0.5 rounded-full border border-stone-700/80 shadow-md">
                 <span className="text-stone-400 hidden xs:inline">Lead:</span>
                 <span className="text-emerald-400 font-bold text-xs sm:text-sm leading-none">{leadSuitInfo.symbol}</span>
-                <span className="truncate max-w-[45px] sm:max-w-none">{leadSuitInfo.name}</span>
-                <span className="text-stone-500 font-normal hidden xs:inline">•</span>
-                <span className="text-amber-300 font-medium text-[8px] sm:text-[9.5px] hidden xs:inline truncate max-w-[55px] sm:max-w-none">
-                  {currentTrick.leader === PlayerPosition.SOUTH ? 'You led' : `${playerNames[currentTrick.leader]} led`}
-                </span>
+                <span className="truncate max-w-[35px] sm:max-w-none">{leadSuitInfo.name}</span>
               </div>
             ) : (
-              <div className="mt-0.5 text-[8px] sm:text-[10px] text-stone-300 font-medium bg-stone-950/80 px-2 py-0.5 rounded-full border border-stone-800">
+              <div className="text-[7.5px] xs:text-[8.5px] sm:text-[9.5px] text-stone-300 font-medium bg-stone-950/80 px-2 py-0.5 rounded-full border border-stone-800">
                 <span>
                   {currentTrick.leader === PlayerPosition.SOUTH ? 'You lead' : `${playerNames[currentTrick.leader]} leads`}
                 </span>
