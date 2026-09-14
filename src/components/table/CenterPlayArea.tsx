@@ -12,7 +12,6 @@ import { CompletedTrick, TrickState } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
 import { SUIT_CONFIG } from '../../models/card';
 import { CardView } from './CardView';
-import { Trophy } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
@@ -20,7 +19,7 @@ import { transitions } from '../../core/animation/animationConfig';
 export interface CenterPlayAreaProps {
   currentTrick: TrickState;
   lastCompletedTrick: CompletedTrick | null;
-  actionMessage: string;
+  actionMessage?: string;
   playerNames: Record<PlayerPosition, string>;
   isBidding?: boolean;
   currentRound?: number;
@@ -31,12 +30,8 @@ export interface CenterPlayAreaProps {
 export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
   currentTrick,
   lastCompletedTrick,
-  actionMessage,
   playerNames,
   isBidding = false,
-  currentRound = 1,
-  totalRounds = 5,
-  leaderScoreText,
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const prevTrickCountRef = useRef<number>(0);
@@ -82,32 +77,8 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center shrink-0 mx-auto select-none">
-      {/* Table-Felt Status Badges: Clean Round/Trick Progress and Live Score Leader */}
-      <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-2 mb-0.5 sm:mb-1.5 z-10">
-        {/* Round & Trick Progress */}
-        <div
-          id="badge-round-trick"
-          className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full bg-stone-950/90 border border-emerald-500/50 text-emerald-300 shadow-md text-[9px] xs:text-[10px] sm:text-xs font-mono font-bold"
-        >
-          <span>R{currentRound}/{totalRounds}</span>
-          <span className="text-stone-500 font-normal">•</span>
-          <span>Trick {trickNumber}/13</span>
-        </div>
-
-        {/* Live Score Leader Pill */}
-        {leaderScoreText && (
-          <div
-            id="badge-score-leader"
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-0.5 rounded-full bg-stone-900/90 border border-stone-700/80 text-stone-200 shadow-md text-[9px] xs:text-[10px] sm:text-xs font-medium"
-          >
-            <Trophy className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400 shrink-0" />
-            <span className="truncate max-w-[120px] sm:max-w-none">{leaderScoreText}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Enlarged Central Trick Resolution Ring (+20% scale for legibility) */}
+    <div className="flex flex-col items-center justify-center shrink-0 mx-auto select-none relative">
+      {/* Central Trick Resolution Ring */}
       <div
         id="center-trick-area"
         className={`relative ${
@@ -319,9 +290,9 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
           </div>
         </div>
 
-        {/* Single Authoritative Winner Toast OR Action Pill directly beneath trick circle */}
+        {/* Trick Winner Toast (Elevated Center-Bottom at z-40) */}
         <AnimatePresence mode="wait">
-          {isShowingCompleted && winnerPos ? (
+          {isShowingCompleted && winnerPos && (
             <motion.div
               key={`winner-toast-${trickNumber}-${winnerPos}`}
               id="trick-winner-toast"
@@ -329,7 +300,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.95 }}
               transition={transitions.springFast}
-              className="absolute -bottom-5 sm:-bottom-6 md:-bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap px-3.5 sm:px-5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-stone-950 via-[#1c1404] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_20px_rgba(0,0,0,0.85),0_0_20px_rgba(251,191,36,0.35)] text-xs sm:text-sm font-bold flex items-center gap-1.5 ring-2 ring-amber-400/40 z-30 tracking-wide"
+              className="absolute -bottom-6 sm:-bottom-7 md:-bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-3.5 sm:px-5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-stone-950 via-[#1c1404] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_25px_rgba(0,0,0,0.9),0_0_25px_rgba(251,191,36,0.45)] text-xs sm:text-sm font-bold flex items-center gap-1.5 ring-2 ring-amber-400/40 z-40 tracking-wide pointer-events-none"
             >
               <span className="text-amber-400 text-sm sm:text-base">🏆</span>
               <span>
@@ -338,19 +309,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
                   : `${playerNames[winnerPos]} won Trick ${trickNumber}!`}
               </span>
             </motion.div>
-          ) : actionMessage ? (
-            <motion.div
-              key={actionMessage}
-              id="trick-action-message"
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 2 }}
-              transition={transitions.springFast}
-              className="absolute -bottom-4 sm:-bottom-5 md:-bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2.5 sm:px-3.5 py-0.5 rounded-full bg-stone-950/95 border border-stone-700/90 text-[8px] xs:text-[9px] sm:text-[10px] text-stone-200 shadow-xl font-mono z-20 max-w-[85vw] truncate"
-            >
-              {actionMessage}
-            </motion.div>
-          ) : null}
+          )}
         </AnimatePresence>
       </div>
     </div>

@@ -182,10 +182,7 @@ export class MultiplayerClient {
     if (this.isConnecting) {
       return new Promise((resolve) => {
         const check = setInterval(() => {
-          if (this.isConnected()) {
-            clearInterval(check);
-            resolve();
-          } else if (this.connectionState === 'ERROR' || this.connectionState === 'CLOSED') {
+          if (this.isConnected() || this.connectionState === 'ERROR' || this.connectionState === 'CLOSED') {
             clearInterval(check);
             resolve();
           }
@@ -196,7 +193,42 @@ export class MultiplayerClient {
     this.isConnecting = true;
     this.setConnectionState('CONNECTING', null);
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
+      let timeoutId: any = null;
+      let completed = false;
+
+      const finish = (finalState: ConnectionState, reason: string | null = null) => {
+        if (completed) return;
+        completed = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        this.isConnecting = false;
+        if (finalState === 'OPEN') {
+          this.setConnectionState('OPEN', null);
+        } else {
+          this.socket = null;
+          this.setConnectionState(finalState, reason);
+        }
+        // Always resolve so callers awaiting connect() never receive unhandled rejections
+        resolve();
+      };
+
+      // 10s safe connection timeout guard
+      timeoutId = setTimeout(() => {
+        console.warn('[WebSocket] Connection attempt timed out after 10s. Setting state to CLOSED.');
+        if (this.socket) {
+          try {
+            this.socket.close();
+          } catch {
+            // ignore
+          }
+          this.socket = null;
+        }
+        finish('CLOSED', 'Connection timed out after 10s');
+      }, 10000);
+
       try {
         const rawWsUrl = import.meta.env.VITE_WS_URL;
         const wsUrl = cleanAndSanitizeWebSocketUrl(rawWsUrl);
@@ -207,32 +239,22 @@ export class MultiplayerClient {
         ws.onopen = (event) => {
           console.log(`[WebSocket] onopen: Connected successfully to ${wsUrl}`, event);
           this.socket = ws;
-          this.isConnecting = false;
-          this.setConnectionState('OPEN', null);
-
           // Flush pending queue
           while (this.pendingQueue.length > 0) {
             const msg = this.pendingQueue.shift();
             if (msg) this.send(msg);
           }
-          resolve();
+          finish('OPEN');
         };
 
         ws.onmessage = (event) => {
-          console.log(
-            '[WebSocket] onmessage: received',
-            typeof event.data === 'string' ? event.data.slice(0, 120) : event.data
-          );
           this.handleServerMessage(event.data);
         };
 
         ws.onerror = (err) => {
-          const errMsg = `WebSocket connection error on ${wsUrl}`;
-          console.error('[WebSocket] onerror:', errMsg, err);
-          this.socket = null;
-          this.isConnecting = false;
-          this.setConnectionState('ERROR', errMsg);
-          reject(err);
+          const errMsg = `WebSocket connection warning on ${wsUrl}`;
+          console.warn('[WebSocket] onerror (handled gracefully):', errMsg, err);
+          finish('CLOSED', errMsg);
         };
 
         ws.onclose = (event) => {
@@ -241,27 +263,24 @@ export class MultiplayerClient {
             (event.code === 1000
               ? 'Connection closed normally'
               : `Server connection closed (code: ${event.code})`);
-          console.warn(`[WebSocket] onclose: code=${event.code}, reason=${event.reason || 'none'}`);
-          this.socket = null;
-          this.isConnecting = false;
-          if (this.connectionState !== 'ERROR') {
-            this.setConnectionState('CLOSED', reason);
-          }
+          console.warn(`[WebSocket] onclose: code=${event.code}, reason=${reason}`);
+          finish('CLOSED', reason);
         };
       } catch (err: any) {
-        this.isConnecting = false;
-        const msg = err?.message || 'Failed to initialize WebSocket';
-        console.error('[WebSocket] exception during connect():', err);
-        this.setConnectionState('ERROR', msg);
-        reject(err);
+        console.warn('[WebSocket] Exception during connect() handled safely:', err);
+        finish('CLOSED', err?.message || 'Failed to initialize WebSocket');
       }
     });
   }
 
   public disconnect(): void {
     if (this.socket) {
-      this.send({ type: 'LEAVE_ROOM' });
-      this.socket.close(1000, 'User left room');
+      try {
+        this.send({ type: 'LEAVE_ROOM' });
+        this.socket.close(1000, 'User left room');
+      } catch {
+        // ignore
+      }
       this.socket = null;
     }
     this.currentRoomState = null;
@@ -270,11 +289,15 @@ export class MultiplayerClient {
 
   private send(message: ClientMessage): void {
     if (this.isConnected() && this.socket) {
-      this.socket.send(JSON.stringify(message));
+      try {
+        this.socket.send(JSON.stringify(message));
+      } catch (err) {
+        console.warn('[WebSocket] Send failed gracefully:', err);
+      }
     } else {
       this.pendingQueue.push(message);
       this.connect().catch((err) => {
-        console.error('Failed to auto-connect to multiplayer server:', err);
+        console.warn('[WebSocket] Auto-connect note:', err);
       });
     }
   }
@@ -285,64 +308,72 @@ export class MultiplayerClient {
         typeof data === 'string' ? data : new TextDecoder().decode(data)
       ) as ServerMessage;
 
+      const safeCall = (fn: Function, arg: any) => {
+        try {
+          fn(arg);
+        } catch (listenerErr) {
+          console.warn('[WebSocket] Trapped listener error safely:', listenerErr);
+        }
+      };
+
       switch (msg.type) {
         case 'ROOM_STATE':
           this.currentRoomState = msg.payload;
-          this.roomStateListeners.forEach((fn) => fn(msg.payload));
+          this.roomStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'MATCH_STARTED':
         case 'GAME_STARTED':
-          this.gameStartedListeners.forEach((fn) => fn(msg.payload.roomCode));
+          this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
           break;
 
         case 'MATCH_SYNC':
-          this.gameStartedListeners.forEach((fn) => fn(msg.payload.roomCode));
-          this.gameStateListeners.forEach((fn) => fn(msg.payload));
+          this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
+          this.gameStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'GAME_STATE':
-          this.gameStateListeners.forEach((fn) => fn(msg.payload));
+          this.gameStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'TURN_TIMER':
         case 'TURN_TIMER_TICK':
-          this.turnTimerListeners.forEach((fn) => fn(msg.payload));
+          this.turnTimerListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'TOAST_NOTIFICATION':
-          this.toastListeners.forEach((fn) => fn(msg.payload));
+          this.toastListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'PLAYER_LEFT':
-          this.playerLeftListeners.forEach((fn) => fn(msg.payload));
+          this.playerLeftListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'PLAYER_DISCONNECTED':
-          this.playerDisconnectedListeners.forEach((fn) => fn(msg.payload));
+          this.playerDisconnectedListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'JOIN_REQUEST':
-          this.joinRequestListeners.forEach((fn) => fn(msg.payload));
+          this.joinRequestListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'JOIN_REQUEST_STATUS':
-          this.joinRequestStatusListeners.forEach((fn) => fn(msg.payload));
+          this.joinRequestStatusListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'GAME_EVENT':
-          this.gameEventListeners.forEach((fn) => fn(msg.payload));
+          this.gameEventListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'ERROR':
-          this.errorListeners.forEach((fn) => fn(msg.payload));
+          this.errorListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'PONG':
           break;
       }
     } catch (err) {
-      console.error('Failed to parse incoming server message:', err);
+      console.warn('Failed to parse incoming server message safely:', err);
     }
   }
 

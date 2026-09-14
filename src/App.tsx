@@ -5,7 +5,12 @@
 
 import React from 'react';
 import { GameShell } from './components/layout/GameShell';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 export default function App() {
-  return <GameShell />;
+  return (
+    <ErrorBoundary>
+      <GameShell />
+    </ErrorBoundary>
+  );
 }

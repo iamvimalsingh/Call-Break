@@ -114,6 +114,12 @@ export const GameTable: React.FC<GameTableProps> = ({
 
   const isBiddingPhase = state.status === GameStatus.BIDDING;
 
+  const isShowingCompleted =
+    state.currentTrick.cards.length === 0 && lastCompletedTrick !== null;
+  const trickNumber = isShowingCompleted
+    ? lastCompletedTrick.trickNumber
+    : state.currentTrick.trickNumber;
+
   const leaderScoreText = React.useMemo(() => {
     const scores = state.cumulativeScores;
     const entries = (Object.keys(scores) as PlayerPosition[]).map((pos) => ({
@@ -128,10 +134,11 @@ export const GameTable: React.FC<GameTableProps> = ({
     if (second && top.score === second.score && top.score === 0) {
       return '';
     }
+    const scoreFormatted = `${top.score > 0 ? '+' : ''}${top.score.toFixed(1)} pts`;
     if (second && top.score === second.score) {
-      return `Tied: ${top.name} (${top.score > 0 ? '+' : ''}${top.score.toFixed(1)})`;
+      return `Tied: ${top.name} (${scoreFormatted})`;
     }
-    return `Leader: ${top.name} (${top.score > 0 ? '+' : ''}${top.score.toFixed(1)})`;
+    return `Leader: ${top.name} (${scoreFormatted})`;
   }, [state.cumulativeScores, playerNames]);
 
   return (
@@ -151,6 +158,54 @@ export const GameTable: React.FC<GameTableProps> = ({
         <div className="absolute inset-1 sm:inset-3 rounded-xl sm:rounded-[2.75rem] border border-emerald-400/15 pointer-events-none" />
         <div className="absolute inset-2 sm:inset-6 rounded-lg sm:rounded-[2.5rem] border border-emerald-500/5 pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/15 via-emerald-950/20 to-black/60 pointer-events-none rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem]" />
+
+        {/* ==================================================================== */}
+        {/* 4-CORNER TABLE HUD ARCHITECTURE                                      */}
+        {/* ==================================================================== */}
+
+        {/* Corner 1 (Top-Left): Match & Trick Progress */}
+        <div
+          id="badge-round-trick"
+          className="absolute top-2 left-3 sm:top-3 sm:left-4 z-30 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-emerald-500/40 text-emerald-300 shadow-lg text-[10px] sm:text-xs font-mono font-bold tracking-tight pointer-events-none"
+        >
+          <span className="text-emerald-400 text-xs sm:text-sm">📍</span>
+          <span>Round {state.currentRound}/{state.config.totalRounds}</span>
+          <span className="text-stone-500 font-normal">•</span>
+          <span>Trick {trickNumber}/13</span>
+        </div>
+
+        {/* Corner 2 (Top-Right): Leaderboard Telemetry */}
+        {leaderScoreText && (
+          <div
+            id="badge-score-leader"
+            className="absolute top-2 right-3 sm:top-3 sm:right-4 z-30 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-amber-500/40 text-stone-200 shadow-lg text-[10px] sm:text-xs font-medium pointer-events-none"
+          >
+            <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
+            <span className="truncate max-w-[130px] xs:max-w-[170px] sm:max-w-[220px] font-semibold">{leaderScoreText}</span>
+          </div>
+        )}
+
+        {/* Corner 3 (Bottom-Left): Live Action Instructions */}
+        <AnimatePresence>
+          {state.lastActionMessage && (
+            <motion.div
+              key={state.lastActionMessage}
+              id="trick-action-message"
+              initial={prefersReducedMotion ? false : { opacity: 0, x: -10, y: 4 }}
+              animate={{ opacity: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, x: -6, y: 2 }}
+              transition={transitions.springFast}
+              className="absolute bottom-20 xs:bottom-22 sm:bottom-24 left-3 sm:left-4 z-30 flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl bg-stone-950/90 backdrop-blur-sm border border-stone-700/80 text-[9px] xs:text-[10px] sm:text-xs text-stone-200 shadow-xl max-w-[220px] xs:max-w-[260px] sm:max-w-[320px] pointer-events-none"
+            >
+              <span className="text-amber-400 text-xs shrink-0">💬</span>
+              <span className="truncate font-mono">{state.lastActionMessage}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ==================================================================== */}
+        {/* CROSS (+) SEATING LAYOUT & CENTER TRICK RESOLUTION AREA              */}
+        {/* ==================================================================== */}
 
         {/* 1. North Player Zone */}
         <div id="zone-north-player" className="w-full flex justify-center z-10 pt-1 sm:pt-2 shrink-0">
@@ -233,7 +288,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         </div>
 
         {/* 3. South Zone: Player Badge & 13-Card Hand Tray */}
-        <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-auto overflow-visible">
+        <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-3 sm:mt-4 overflow-visible">
           {/* South Player Header Badge */}
           <div className="mb-0.5 sm:mb-1 shrink-0">
             <PlayerSlot
