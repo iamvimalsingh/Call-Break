@@ -199,17 +199,27 @@ export class LocalGameController implements IGameController {
     }
   }
 
-  public initMatch(mode: GameMode = GameMode.OFFLINE_BOTS, enableRebiddingRule: boolean = false): void {
+  public initMatch(mode: GameMode = GameMode.OFFLINE_BOTS, enableRebiddingRule: boolean = false, totalRounds: number = 5): void {
     const rawState = createInitialGameState(mode);
-    const freshState: GameState = enableRebiddingRule
-      ? {
-          ...rawState,
-          config: {
-            ...rawState.config,
-            enableRebiddingRule: true,
-          },
-        }
-      : rawState;
+    const userSavedName = typeof window !== 'undefined' ? (localStorage.getItem('cb_player_name') || '').trim() : '';
+    const southBase = userSavedName && !/^(host|player|you)$/i.test(userSavedName) ? userSavedName : 'Host';
+    const finalSouthName = `${southBase} (You)`;
+
+    const freshState: GameState = {
+      ...rawState,
+      config: {
+        ...rawState.config,
+        totalRounds: totalRounds === 10 ? 10 : 5,
+        ...(enableRebiddingRule ? { enableRebiddingRule: true } : {}),
+      },
+      players: {
+        ...rawState.players,
+        [PlayerPosition.SOUTH]: {
+          ...rawState.players.SOUTH,
+          name: finalSouthName,
+        },
+      },
+    };
     this.store.reset(freshState);
     this.persistState(freshState);
   }
@@ -217,8 +227,8 @@ export class LocalGameController implements IGameController {
   /**
    * Starts a completely fresh match and immediately initializes Round 1.
    */
-  public startNewMatch(mode: GameMode = GameMode.OFFLINE_BOTS, enableRebiddingRule: boolean = false): void {
-    this.initMatch(mode, enableRebiddingRule);
+  public startNewMatch(mode: GameMode = GameMode.OFFLINE_BOTS, enableRebiddingRule: boolean = false, totalRounds: number = 5): void {
+    this.initMatch(mode, enableRebiddingRule, totalRounds);
     this.startRound();
   }
 

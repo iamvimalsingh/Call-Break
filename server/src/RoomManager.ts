@@ -33,11 +33,21 @@ interface DisconnectedSeatInfo {
   wasHost: boolean;
 }
 
+interface PendingJoinRequestInfo {
+  requestId: string;
+  clientId: string;
+  playerName: string;
+  socket: WebSocket;
+  targetPos: PlayerPosition;
+  timestamp: number;
+}
+
 export class GameRoom {
   public readonly roomCode: string;
   public hostClientId: string;
   public status: 'LOBBY' | 'PLAYING' | 'FINISHED' = 'LOBBY';
   public autoFillBots: boolean = true;
+  public totalRounds: number = 5;
   
   // Position to participant
   private players = new Map<PlayerPosition, RoomParticipant>();
@@ -47,6 +57,8 @@ export class GameRoom {
   private clientPositions = new Map<string, PlayerPosition>();
   // Disconnected seats map for seamless same-seat re-connection
   private disconnectedSeats = new Map<string, DisconnectedSeatInfo>();
+  // Pending join requests awaiting Host approval
+  private pendingJoinRequests = new Map<string, PendingJoinRequestInfo>();
 
   private controller: AuthoritativeGameController | null = null;
   private unsubscribeEvents: (() => void) | null = null;
@@ -58,10 +70,21 @@ export class GameRoom {
     this.roomCode = normalizeRoomCode(roomCode);
     this.hostClientId = hostClientId;
 
+    const cleanHostName = (hostName || '')
+      .replace(/\s*\(You\)$/i, '')
+      .replace(/\s*\(Host\)$/i, '')
+      .replace(/^Host Player$/i, '')
+      .trim();
+
+    const finalHostName =
+      cleanHostName && !/^(host|player|player 1|you)$/i.test(cleanHostName)
+        ? cleanHostName
+        : 'Host (Player 1)';
+
     // Host is assigned South
     const hostParticipant: RoomParticipant = {
       id: hostClientId,
-      name: hostName || 'Player 1 (Host)',
+      name: finalHostName,
       position: PlayerPosition.SOUTH,
       isHost: true,
       isReady: true,
@@ -161,7 +184,7 @@ export class GameRoom {
         return { success: true, position: assignedPos };
       }
 
-      // 2. Same-Seat Re-entry by Room Code: Check disconnected seat records
+      // 2. Check if this is a returning disconnected player (Reconnection)
       let targetPos: PlayerPosition | null = null;
       let matchedSeatInfo: DisconnectedSeatInfo | undefined;
 
@@ -173,101 +196,249 @@ export class GameRoom {
         targetPos = matchedSeatInfo?.position ?? null;
       }
 
-      // If specific disconnected seat found and it's currently occupied by a bot:
-      if (targetPos && this.players.get(targetPos)?.isBot) {
-        // Re-claiming original seat!
-      } else {
-        // Fallback: Dynamic seat takeover of the first available Bot seat in SEAT_ORDER
-        targetPos = null;
-        for (const pos of SEAT_ORDER) {
-          const participant = this.players.get(pos);
-          if (participant && participant.isBot) {
-            targetPos = pos;
-            break;
+      const isReturningPlayer = matchedSeatInfo !== undefined;
+
+      // If returning player: target their seat if occupied by a bot (or find available bot seat)
+      if (isReturningPlayer) {
+        if (targetPos && this.players.get(targetPos)?.isBot) {
+          // Re-claiming original seat!
+        } else {
+          targetPos = null;
+          for (const pos of SEAT_ORDER) {
+            const participant = this.players.get(pos);
+            if (participant && participant.isBot) {
+              targetPos = pos;
+              break;
+            }
+          }
+        }
+
+        if (!targetPos) {
+          return { success: false, error: 'Room is full (4/4 players)' };
+        }
+
+        // Hot-swap the Bot seat with the returning human player immediately
+        const incomingName = cleanPlayerName || matchedSeatInfo?.name || `Player ${targetPos}`;
+        const wasHost = matchedSeatInfo?.wasHost ?? false;
+
+        const newParticipant: RoomParticipant = {
+          id: clientId,
+          name: incomingName,
+          position: targetPos,
+          isHost: wasHost,
+          isReady: true,
+          isBot: false,
+        };
+
+        this.players.set(targetPos, newParticipant);
+        this.clientSockets.set(clientId, socket);
+        this.clientPositions.set(clientId, targetPos);
+
+        // Clean up disconnected seat records
+        if (matchedSeatInfo) {
+          this.disconnectedSeats.delete(matchedSeatInfo.originalClientId);
+          this.disconnectedSeats.delete(matchedSeatInfo.name.toLowerCase());
+        }
+
+        if (this.controller) {
+          this.controller.takeoverBotSeat(targetPos, clientId, incomingName);
+        }
+
+        if (this.controller) {
+          const perspectiveState = this.controller.getPerspectiveState(targetPos);
+          const syncMsg: ServerMessage = {
+            type: 'MATCH_SYNC',
+            payload: {
+              roomCode: this.roomCode,
+              state: perspectiveState,
+              myPosition: PlayerPosition.SOUTH,
+              rawPosition: targetPos,
+            },
+          };
+          socket.send(JSON.stringify(syncMsg));
+
+          const currentTimer = this.controller.getCurrentTimer();
+          if (currentTimer) {
+            const clientIdx = SEAT_ORDER.indexOf(targetPos);
+            const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
+            const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+            const mappedPos = SEAT_ORDER[mappedIdx];
+
+            const timerMsg: ServerMessage = {
+              type: 'TURN_TIMER',
+              payload: {
+                ...currentTimer,
+                position: mappedPos,
+              },
+            };
+            socket.send(JSON.stringify(timerMsg));
+          }
+        }
+
+        this.broadcastRoomState();
+        this.broadcastGameState();
+
+        const reconnectedMsg = `🎉 ${incomingName} reconnected to their seat!`;
+        this.broadcast({
+          type: 'TOAST_NOTIFICATION',
+          payload: {
+            message: reconnectedMsg,
+            type: 'success',
+          },
+        });
+
+        return { success: true, position: targetPos };
+      }
+
+      // 3. NEW Player joining mid-game (Host Approval Flow)
+      const availableSeats: Array<{
+        seat: PlayerPosition;
+        type: 'auto_play' | 'bot';
+        label: string;
+      }> = [];
+
+      for (const pos of SEAT_ORDER) {
+        const participant = this.players.get(pos);
+        if (participant && participant.isBot) {
+          const isAutoPlay = participant.name.toLowerCase().includes('auto-play') || this.disconnectedSeats.has(participant.name.toLowerCase());
+          const rawName = participant.name
+            .replace(/\s*\(You\)$/i, '')
+            .replace(/\s*\(Host\)$/i, '')
+            .replace(/\s*\(Auto-Play\)$/i, '')
+            .replace(/\s*\(Bot\)$/i, '')
+            .replace(/^🤖\s*/, '')
+            .trim();
+
+          if (isAutoPlay) {
+            availableSeats.push({
+              seat: pos,
+              type: 'auto_play',
+              label: `Assign to ${rawName || 'Auto-Play'}'s Auto-Play Seat`,
+            });
+          } else {
+            availableSeats.push({
+              seat: pos,
+              type: 'bot',
+              label: `Replace Bot Seat (${participant.name.replace(/^🤖\s*/, '')})`,
+            });
           }
         }
       }
 
-      if (!targetPos) {
-        return { success: false, error: 'Room is full (4/4 players)' };
+      if (availableSeats.length === 0) {
+        return { success: false, error: 'Table is full (4/4 players)' };
       }
 
-      // 3. Hot-swap the Bot seat with the returning human player
-      const incomingName = cleanPlayerName || matchedSeatInfo?.name || `Player ${targetPos}`;
-      const wasHost = matchedSeatInfo?.wasHost ?? false;
+      targetPos = availableSeats[0].seat;
 
-      const newParticipant: RoomParticipant = {
-        id: clientId,
-        name: incomingName,
-        position: targetPos,
-        isHost: wasHost,
-        isReady: true,
-        isBot: false,
-      };
+      const incomingName = cleanPlayerName || `Player ${targetPos}`;
+      const hostSocket = this.clientSockets.get(this.hostClientId);
+      const isHostConnected = hostSocket && hostSocket.readyState === WebSocket.OPEN;
 
-      this.players.set(targetPos, newParticipant);
-      this.clientSockets.set(clientId, socket);
-      this.clientPositions.set(clientId, targetPos);
+      if (isHostConnected) {
+        // Send Join Request to Host for approval
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        this.pendingJoinRequests.set(requestId, {
+          requestId,
+          clientId,
+          playerName: incomingName,
+          socket,
+          targetPos,
+          timestamp: Date.now(),
+        });
 
-      // Clean up disconnected seat records
-      if (matchedSeatInfo) {
-        this.disconnectedSeats.delete(matchedSeatInfo.originalClientId);
-        this.disconnectedSeats.delete(matchedSeatInfo.name.toLowerCase());
-      }
-
-      // 4. Update authoritative game controller with human takeover
-      if (this.controller) {
-        this.controller.takeoverBotSeat(targetPos, clientId, incomingName);
-      }
-
-      // 5. Send authoritative MATCH_SYNC snapshot to the returning human player
-      if (this.controller) {
-        const perspectiveState = this.controller.getPerspectiveState(targetPos);
-        const syncMsg: ServerMessage = {
-          type: 'MATCH_SYNC',
+        // Inform joining user they are pending approval
+        const pendingStatus: ServerMessage = {
+          type: 'JOIN_REQUEST_STATUS',
           payload: {
-            roomCode: this.roomCode,
-            state: perspectiveState,
-            myPosition: PlayerPosition.SOUTH,
-            rawPosition: targetPos,
+            status: 'PENDING',
+            message: 'Waiting for table host to accept your request...',
+            requestId,
           },
         };
-        socket.send(JSON.stringify(syncMsg));
+        try {
+          socket.send(JSON.stringify(pendingStatus));
+        } catch {}
 
-        // Sync active turn timer
-        const currentTimer = this.controller.getCurrentTimer();
-        if (currentTimer) {
-          const clientIdx = SEAT_ORDER.indexOf(targetPos);
-          const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
-          const mappedIdx = (rawIdx - clientIdx + 4) % 4;
-          const mappedPos = SEAT_ORDER[mappedIdx];
+        // Send JOIN_REQUEST modal prompt to Host
+        const joinReqMsg: ServerMessage = {
+          type: 'JOIN_REQUEST',
+          payload: {
+            requestId,
+            playerName: incomingName,
+            clientId,
+            position: targetPos,
+            availableSeats,
+          },
+        };
+        try {
+          hostSocket.send(JSON.stringify(joinReqMsg));
+        } catch {}
 
-          const timerMsg: ServerMessage = {
-            type: 'TURN_TIMER',
+        return { success: true, position: targetPos };
+      } else {
+        // Host is not online (or South is a bot) -> Auto-admit!
+        const newParticipant: RoomParticipant = {
+          id: clientId,
+          name: incomingName,
+          position: targetPos,
+          isHost: false,
+          isReady: true,
+          isBot: false,
+        };
+
+        this.players.set(targetPos, newParticipant);
+        this.clientSockets.set(clientId, socket);
+        this.clientPositions.set(clientId, targetPos);
+
+        if (this.controller) {
+          this.controller.takeoverBotSeat(targetPos, clientId, incomingName);
+        }
+
+        if (this.controller) {
+          const perspectiveState = this.controller.getPerspectiveState(targetPos);
+          const syncMsg: ServerMessage = {
+            type: 'MATCH_SYNC',
             payload: {
-              ...currentTimer,
-              position: mappedPos,
+              roomCode: this.roomCode,
+              state: perspectiveState,
+              myPosition: PlayerPosition.SOUTH,
+              rawPosition: targetPos,
             },
           };
-          socket.send(JSON.stringify(timerMsg));
+          socket.send(JSON.stringify(syncMsg));
+
+          const currentTimer = this.controller.getCurrentTimer();
+          if (currentTimer) {
+            const clientIdx = SEAT_ORDER.indexOf(targetPos);
+            const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
+            const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+            const mappedPos = SEAT_ORDER[mappedIdx];
+
+            const timerMsg: ServerMessage = {
+              type: 'TURN_TIMER',
+              payload: {
+                ...currentTimer,
+                position: mappedPos,
+              },
+            };
+            socket.send(JSON.stringify(timerMsg));
+          }
         }
+
+        this.broadcastRoomState();
+        this.broadcastGameState();
+
+        this.broadcast({
+          type: 'TOAST_NOTIFICATION',
+          payload: {
+            message: `🎉 ${incomingName} joined the table (Replaced Bot)!`,
+            type: 'success',
+          },
+        });
+
+        return { success: true, position: targetPos };
       }
-
-      // 6. Broadcast updated Room State and Game State to all players
-      this.broadcastRoomState();
-      this.broadcastGameState();
-
-      // 7. Broadcast reconnected notification to table
-      const reconnectedMsg = `${incomingName} reconnected to their seat!`;
-      this.broadcast({
-        type: 'TOAST_NOTIFICATION',
-        payload: {
-          message: reconnectedMsg,
-          type: 'success',
-        },
-      });
-
-      return { success: true, position: targetPos };
     }
 
     // LOBBY status logic:
@@ -290,9 +461,21 @@ export class GameRoom {
       return { success: false, error: 'Room is already full (4/4 players).' };
     }
 
+    let defaultName = 'Friend 1';
+    if (openPosition === PlayerPosition.WEST) defaultName = 'Friend 1';
+    else if (openPosition === PlayerPosition.NORTH) defaultName = 'Friend 2';
+    else if (openPosition === PlayerPosition.EAST) defaultName = 'Friend 3';
+    else if (openPosition === PlayerPosition.SOUTH) defaultName = 'Host (Player 1)';
+
+    const rawIncoming = (cleanPlayerName || '').trim();
+    const isGeneric =
+      !rawIncoming ||
+      /^(friend|player|guest|user|friend \(you\)|host player|host player \(you\))$/i.test(rawIncoming);
+    const assignedName = isGeneric ? defaultName : rawIncoming;
+
     const participant: RoomParticipant = {
       id: clientId,
-      name: cleanPlayerName || `Player ${this.players.size + 1}`,
+      name: assignedName,
       position: openPosition,
       isHost: false,
       isReady: true,
@@ -325,9 +508,25 @@ export class GameRoom {
 
       // If host left, transfer host to next human or South
       if (clientId === this.hostClientId && this.players.size > 0) {
-        const remaining = Array.from(this.players.values())[0];
-        remaining.isHost = true;
-        this.hostClientId = remaining.id;
+        const remaining = Array.from(this.players.values()).find(
+          (p) => !p.isBot && p.id !== clientId && this.clientSockets.has(p.id)
+        ) || Array.from(this.players.values())[0];
+        if (remaining) {
+          remaining.isHost = true;
+          this.hostClientId = remaining.id;
+          const cleanNewHostName = remaining.name
+            .replace(/\s*\(You\)$/i, '')
+            .replace(/\s*\(Host\)$/i, '')
+            .replace(/\s*\(Bot\)$/i, '')
+            .trim() || 'Player';
+          this.broadcast({
+            type: 'TOAST_NOTIFICATION',
+            payload: {
+              message: `👑 ${cleanNewHostName} is now the Table Host.`,
+              type: 'info',
+            },
+          });
+        }
       }
 
       this.broadcastRoomState();
@@ -351,7 +550,14 @@ export class GameRoom {
       }
 
       // Replace departing human seat with an active AI Bot
-      const botName = `🤖 ${cleanPlayerName} (Bot)`;
+      const personaNames: Record<PlayerPosition, string> = {
+        [PlayerPosition.SOUTH]: 'Bot: Shield',
+        [PlayerPosition.WEST]: 'Bot: Shield',
+        [PlayerPosition.NORTH]: 'Bot: Shark',
+        [PlayerPosition.EAST]: 'Bot: Tactician',
+      };
+      const persona = personaNames[pos] || 'Bot: Shield';
+      const botName = cleanPlayerName ? `🤖 ${cleanPlayerName} (Auto-Play)` : persona;
       const botParticipant: RoomParticipant = {
         id: `bot_${pos}_${clientId}`,
         name: botName,
@@ -365,11 +571,23 @@ export class GameRoom {
       // Transfer host if leaving player was the host
       if (clientId === this.hostClientId) {
         const nextHuman = Array.from(this.players.values()).find(
-          (p) => !p.isBot && this.clientSockets.has(p.id)
+          (p) => !p.isBot && p.id !== clientId && this.clientSockets.has(p.id)
         );
         if (nextHuman) {
           nextHuman.isHost = true;
           this.hostClientId = nextHuman.id;
+          const cleanNewHostName = nextHuman.name
+            .replace(/\s*\(You\)$/i, '')
+            .replace(/\s*\(Host\)$/i, '')
+            .replace(/\s*\(Bot\)$/i, '')
+            .trim() || 'Player';
+          this.broadcast({
+            type: 'TOAST_NOTIFICATION',
+            payload: {
+              message: `👑 ${cleanNewHostName} is now the Table Host.`,
+              type: 'info',
+            },
+          });
         }
       }
 
@@ -378,7 +596,15 @@ export class GameRoom {
         this.controller.replacePlayerWithBot(pos, botName);
       }
 
-      // 1. Broadcast PLAYER_LEFT event to all remaining clients
+      // 1. Broadcast PLAYER_DISCONNECTED & PLAYER_LEFT events to all remaining clients
+      this.broadcast({
+        type: 'PLAYER_DISCONNECTED',
+        payload: {
+          seat: pos,
+          playerName: cleanPlayerName,
+        },
+      });
+
       this.broadcast({
         type: 'PLAYER_LEFT',
         payload: {
@@ -392,7 +618,7 @@ export class GameRoom {
       this.broadcast({
         type: 'TOAST_NOTIFICATION',
         payload: {
-          message: `${cleanPlayerName} disconnected. Bot is playing this seat.`,
+          message: `⚠️ ${cleanPlayerName} disconnected. Bot is now playing.`,
           type: 'warning',
         },
       });
@@ -403,9 +629,212 @@ export class GameRoom {
     }
   }
 
+  public handleJoinResponse(
+    hostClientId: string,
+    requestId: string,
+    accept: boolean,
+    targetSeat?: PlayerPosition
+  ): { success: boolean; error?: string } {
+    if (hostClientId !== this.hostClientId) {
+      return { success: false, error: 'Only the room host can approve join requests.' };
+    }
+
+    const pending = this.pendingJoinRequests.get(requestId);
+    if (!pending) {
+      return { success: false, error: 'Join request not found or expired.' };
+    }
+
+    this.pendingJoinRequests.delete(requestId);
+
+    if (!accept) {
+      try {
+        const declineMsg: ServerMessage = {
+          type: 'JOIN_REQUEST_STATUS',
+          payload: {
+            status: 'DECLINED',
+            message: 'Host declined your request to join the match.',
+            requestId,
+          },
+        };
+        pending.socket.send(JSON.stringify(declineMsg));
+
+        const errMsg: ServerMessage = {
+          type: 'ERROR',
+          payload: {
+            code: 'JOIN_DECLINED',
+            message: 'Host declined your request to join the match.',
+          },
+        };
+        pending.socket.send(JSON.stringify(errMsg));
+      } catch (err) {}
+      return { success: true };
+    }
+
+    // Host Accepted: Find target seat or first available bot seat
+    let chosenSeat = targetSeat || pending.targetPos;
+    if (!this.players.get(chosenSeat)?.isBot) {
+      chosenSeat = null as any;
+      for (const pos of SEAT_ORDER) {
+        if (this.players.get(pos)?.isBot) {
+          chosenSeat = pos;
+          break;
+        }
+      }
+    }
+
+    if (!chosenSeat) {
+      try {
+        pending.socket.send(
+          JSON.stringify({
+            type: 'ERROR',
+            payload: { message: 'Table is full (4/4 players)' },
+          })
+        );
+      } catch {}
+      return { success: false, error: 'Table is full' };
+    }
+
+    // Remove from disconnectedSeats if recovering an auto-play seat
+    for (const [key, info] of Array.from(this.disconnectedSeats.entries())) {
+      if (info.position === chosenSeat) {
+        this.disconnectedSeats.delete(key);
+      }
+    }
+
+    const newParticipant: RoomParticipant = {
+      id: pending.clientId,
+      name: pending.playerName,
+      position: chosenSeat,
+      isHost: false,
+      isReady: true,
+      isBot: false,
+    };
+
+    this.players.set(chosenSeat, newParticipant);
+    this.clientSockets.set(pending.clientId, pending.socket);
+    this.clientPositions.set(pending.clientId, chosenSeat);
+    RoomManager.getInstance().registerClientRoom(pending.clientId, this.roomCode);
+
+    if (this.controller) {
+      this.controller.takeoverBotSeat(chosenSeat, pending.clientId, pending.playerName);
+    }
+
+    // Send status ACCEPTED to joiner
+    try {
+      const acceptedStatus: ServerMessage = {
+        type: 'JOIN_REQUEST_STATUS',
+        payload: {
+          status: 'ACCEPTED',
+          message: 'Join request accepted!',
+          requestId,
+        },
+      };
+      pending.socket.send(JSON.stringify(acceptedStatus));
+
+      // Send authoritative MATCH_SYNC snapshot
+      if (this.controller) {
+        const perspectiveState = this.controller.getPerspectiveState(chosenSeat);
+        const syncMsg: ServerMessage = {
+          type: 'MATCH_SYNC',
+          payload: {
+            roomCode: this.roomCode,
+            state: perspectiveState,
+            myPosition: PlayerPosition.SOUTH,
+            rawPosition: chosenSeat,
+          },
+        };
+        pending.socket.send(JSON.stringify(syncMsg));
+
+        // Sync active turn timer if running
+        const currentTimer = this.controller.getCurrentTimer();
+        if (currentTimer) {
+          const clientIdx = SEAT_ORDER.indexOf(chosenSeat);
+          const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
+          const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+          const mappedPos = SEAT_ORDER[mappedIdx];
+
+          const timerMsg: ServerMessage = {
+            type: 'TURN_TIMER',
+            payload: {
+              ...currentTimer,
+              position: mappedPos,
+            },
+          };
+          pending.socket.send(JSON.stringify(timerMsg));
+        }
+      }
+    } catch (err) {
+      console.error('[RoomManager] Failed to send sync to admitted player:', err);
+    }
+
+    // Broadcast toast to remaining table players
+    this.broadcast({
+      type: 'TOAST_NOTIFICATION',
+      payload: {
+        message: `${pending.playerName} joined the table!`,
+        type: 'success',
+      },
+    });
+
+    this.broadcastRoomState();
+    this.broadcastGameState();
+
+    return { success: true };
+  }
+
+  public handleConvertToBot(
+    hostClientId: string,
+    seat: PlayerPosition
+  ): { success: boolean; error?: string } {
+    if (hostClientId !== this.hostClientId) {
+      return { success: false, error: 'Only the room host can convert seats to permanent bots.' };
+    }
+
+    const participant = this.players.get(seat);
+    if (!participant) {
+      return { success: false, error: 'Player seat not found.' };
+    }
+
+    // Clear disconnected seat reservation
+    for (const [key, info] of Array.from(this.disconnectedSeats.entries())) {
+      if (info.position === seat) {
+        this.disconnectedSeats.delete(key);
+      }
+    }
+
+    const personaNames: Record<PlayerPosition, string> = {
+      [PlayerPosition.SOUTH]: 'Bot: Shield',
+      [PlayerPosition.WEST]: 'Bot: Shield',
+      [PlayerPosition.NORTH]: 'Bot: Shark',
+      [PlayerPosition.EAST]: 'Bot: Tactician',
+    };
+    const botName = personaNames[seat] || `Bot: ${seat}`;
+
+    participant.isBot = true;
+    participant.name = botName;
+
+    if (this.controller) {
+      this.controller.replacePlayerWithBot(seat, botName);
+    }
+
+    this.broadcast({
+      type: 'TOAST_NOTIFICATION',
+      payload: {
+        message: `🤖 ${seat} permanently converted to AI Bot.`,
+        type: 'info',
+      },
+    });
+
+    this.broadcastRoomState();
+    this.broadcastGameState();
+
+    return { success: true };
+  }
+
   public startMatch(
     requestingClientId: string,
-    autoFillBots: boolean
+    autoFillBots: boolean,
+    totalRounds: number = 5
   ): { success: boolean; error?: string } {
     if (requestingClientId !== this.hostClientId) {
       return { success: false, error: 'Only the room host can start the table.' };
@@ -442,13 +871,14 @@ export class GameRoom {
     }
 
     this.autoFillBots = autoFillBots;
+    this.totalRounds = totalRounds === 10 ? 10 : 5;
 
-    // Fill missing seats with Bots
+    // Fill missing seats with Bots strictly named by persona
     const botNames: Record<PlayerPosition, string> = {
-      [PlayerPosition.SOUTH]: 'Bot (South)',
-      [PlayerPosition.WEST]: 'Bot (West)',
-      [PlayerPosition.NORTH]: 'Bot (North)',
-      [PlayerPosition.EAST]: 'Bot (East)',
+      [PlayerPosition.SOUTH]: 'Bot: Shield',
+      [PlayerPosition.WEST]: 'Bot: Shield',
+      [PlayerPosition.NORTH]: 'Bot: Shark',
+      [PlayerPosition.EAST]: 'Bot: Tactician',
     };
 
     for (const pos of SEAT_ORDER) {
@@ -537,7 +967,86 @@ export class GameRoom {
       });
     });
 
-    this.controller.initializeMatch(playerConfigs);
+    this.controller.initializeMatch(playerConfigs, this.totalRounds);
+    return { success: true };
+  }
+
+  public renameSeat(
+    requestingClientId: string,
+    targetSeat: PlayerPosition,
+    newName: string
+  ): { success: boolean; error?: string } {
+    if (requestingClientId !== this.hostClientId) {
+      return { success: false, error: 'Only the host can rename player seats.' };
+    }
+    const player = this.players.get(targetSeat);
+    if (!player) {
+      return { success: false, error: 'Target seat is empty.' };
+    }
+    const defaultName = targetSeat === PlayerPosition.SOUTH ? 'Host' : `Friend ${targetSeat === PlayerPosition.WEST ? 1 : targetSeat === PlayerPosition.NORTH ? 2 : 3}`;
+    const clean = newName.trim() || defaultName;
+    player.name = clean;
+    if (this.controller) {
+      this.controller.takeoverBotSeat(targetSeat, player.id, clean);
+    }
+    this.broadcastRoomState();
+    this.broadcastGameState();
+    return { success: true };
+  }
+
+  public transferHost(
+    requestingClientId: string,
+    targetSeatOrClientId: PlayerPosition | string
+  ): { success: boolean; error?: string } {
+    if (requestingClientId !== this.hostClientId) {
+      return { success: false, error: 'Only the room host can transfer the host role.' };
+    }
+
+    let targetParticipant: RoomParticipant | undefined;
+    if (Object.values(PlayerPosition).includes(targetSeatOrClientId as PlayerPosition)) {
+      targetParticipant = this.players.get(targetSeatOrClientId as PlayerPosition);
+    } else {
+      targetParticipant = Array.from(this.players.values()).find((p) => p.id === targetSeatOrClientId);
+    }
+
+    if (!targetParticipant) {
+      return { success: false, error: 'Target player not found.' };
+    }
+
+    if (targetParticipant.isBot || !this.clientSockets.has(targetParticipant.id)) {
+      return { success: false, error: 'Cannot transfer host role to a bot or offline player.' };
+    }
+
+    if (targetParticipant.id === this.hostClientId) {
+      return { success: true };
+    }
+
+    // Unmark old host
+    for (const p of this.players.values()) {
+      if (p.isHost) {
+        p.isHost = false;
+      }
+    }
+
+    // Assign new host
+    targetParticipant.isHost = true;
+    this.hostClientId = targetParticipant.id;
+
+    const cleanNewHostName = targetParticipant.name
+      .replace(/\s*\(You\)$/i, '')
+      .replace(/\s*\(Host\)$/i, '')
+      .trim() || 'Player';
+
+    this.broadcast({
+      type: 'TOAST_NOTIFICATION',
+      payload: {
+        message: `👑 ${cleanNewHostName} is now the Table Host.`,
+        type: 'info',
+      },
+    });
+
+    this.broadcastRoomState();
+    this.broadcastGameState();
     return { success: true };
   }
 
@@ -592,6 +1101,7 @@ export class GameRoom {
           assignedPosition: assignedPos,
           myClientId: clientId,
           autoFillBots: this.autoFillBots,
+          totalRounds: this.totalRounds,
         };
 
         const msg: ServerMessage = {
@@ -757,6 +1267,10 @@ export class RoomManager {
         this.rooms.delete(roomCode);
       }
     }
+  }
+
+  public registerClientRoom(clientId: string, roomCode: string): void {
+    this.clientRoomMap.set(clientId, normalizeRoomCode(roomCode));
   }
 
   public getRoomByClientId(clientId: string): GameRoom | undefined {

@@ -61,13 +61,16 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 
         switch (msg.type) {
           case 'CREATE_ROOM': {
-            const { roomCode, playerName } = msg.payload || {};
+            const { roomCode, playerName, totalRounds } = msg.payload || {};
             const room = roomManager.createRoom(
               clientId,
-              playerName || 'Host Player',
+              playerName || 'Host',
               socket,
               roomCode
             );
+            if (totalRounds && (totalRounds === 5 || totalRounds === 10)) {
+              room.totalRounds = totalRounds;
+            }
             console.log(`[WebSocket] Room created: ${room.roomCode} by ${clientId}`);
             break;
           }
@@ -77,7 +80,7 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             const result = roomManager.joinRoom(
               roomCode,
               clientId,
-              playerName || 'Guest Player',
+              playerName || 'Guest',
               socket
             );
 
@@ -109,7 +112,8 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             }
 
             const autoFill = msg.payload?.autoFillBots ?? true;
-            const result = room.startMatch(clientId, autoFill);
+            const totalRounds = msg.payload?.totalRounds ?? 5;
+            const result = room.startMatch(clientId, autoFill, totalRounds);
 
             if (!result.success) {
               const errMsg: ServerMessage = {
@@ -119,6 +123,26 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
               socket.send(JSON.stringify(errMsg));
             } else {
               console.log(`[WebSocket] Match started in room ${room.roomCode}`);
+            }
+            break;
+          }
+
+          case 'RENAME_PLAYER': {
+            const room = roomManager.getRoomByClientId(clientId);
+            if (room) {
+              const { seat, name } = msg.payload || {};
+              if (seat && name) {
+                room.renameSeat(clientId, seat, name);
+              }
+            }
+            break;
+          }
+
+          case 'TRANSFER_HOST': {
+            const room = roomManager.getRoomByClientId(clientId);
+            if (room) {
+              const { targetSeat, targetClientId } = msg.payload || {};
+              room.transferHost(clientId, targetSeat || targetClientId);
             }
             break;
           }
@@ -159,6 +183,22 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             const room = roomManager.getRoomByClientId(clientId);
             if (room) {
               room.handleNextRound(clientId);
+            }
+            break;
+          }
+
+          case 'RESPOND_JOIN_REQUEST': {
+            const room = roomManager.getRoomByClientId(clientId);
+            if (room) {
+              room.handleJoinResponse(clientId, msg.payload.requestId, msg.payload.accept, msg.payload.targetSeat);
+            }
+            break;
+          }
+
+          case 'CONVERT_TO_BOT': {
+            const room = roomManager.getRoomByClientId(clientId);
+            if (room && msg.payload?.seat) {
+              room.handleConvertToBot(clientId, msg.payload.seat);
             }
             break;
           }

@@ -10,6 +10,8 @@ import { PlayerPosition } from '../../models/player';
 import {
   ClientMessage,
   ConnectionState,
+  JoinRequestPayload,
+  JoinRequestStatusPayload,
   RoomState,
   ServerMessage,
   ToastPayload,
@@ -33,6 +35,12 @@ export type PlayerLeftListener = (data: {
   playerName: string;
   position: PlayerPosition;
 }) => void;
+export type PlayerDisconnectedListener = (data: {
+  seat: PlayerPosition;
+  playerName: string;
+}) => void;
+export type JoinRequestListener = (payload: JoinRequestPayload) => void;
+export type JoinRequestStatusListener = (payload: JoinRequestStatusPayload) => void;
 
 /**
  * Cleans and sanitizes WebSocket URLs by stripping markdown brackets, parentheses,
@@ -116,6 +124,9 @@ export class MultiplayerClient {
   private turnTimerListeners: Set<TurnTimerListener> = new Set();
   private toastListeners: Set<ToastListener> = new Set();
   private playerLeftListeners: Set<PlayerLeftListener> = new Set();
+  private playerDisconnectedListeners: Set<PlayerDisconnectedListener> = new Set();
+  private joinRequestListeners: Set<JoinRequestListener> = new Set();
+  private joinRequestStatusListeners: Set<JoinRequestStatusListener> = new Set();
 
   public static getInstance(): MultiplayerClient {
     if (!MultiplayerClient.instance) {
@@ -126,6 +137,11 @@ export class MultiplayerClient {
 
   public isConnected(): boolean {
     return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+  }
+
+  public isHost(): boolean {
+    if (!this.currentRoomState) return false;
+    return this.currentRoomState.players.find((p) => p.id === this.currentRoomState?.myClientId)?.isHost === true;
   }
 
   public getConnectionState(): ConnectionState {
@@ -302,6 +318,18 @@ export class MultiplayerClient {
           this.playerLeftListeners.forEach((fn) => fn(msg.payload));
           break;
 
+        case 'PLAYER_DISCONNECTED':
+          this.playerDisconnectedListeners.forEach((fn) => fn(msg.payload));
+          break;
+
+        case 'JOIN_REQUEST':
+          this.joinRequestListeners.forEach((fn) => fn(msg.payload));
+          break;
+
+        case 'JOIN_REQUEST_STATUS':
+          this.joinRequestStatusListeners.forEach((fn) => fn(msg.payload));
+          break;
+
         case 'GAME_EVENT':
           this.gameEventListeners.forEach((fn) => fn(msg.payload));
           break;
@@ -319,29 +347,57 @@ export class MultiplayerClient {
   }
 
   // Room Actions
-  public createRoom(playerName: string = 'Host Player', roomCode?: string): void {
+  public createRoom(playerName: string = 'Host', roomCode?: string, totalRounds: number = 5): void {
     this.send({
       type: 'CREATE_ROOM',
-      payload: { playerName, roomCode },
+      payload: { playerName, roomCode, totalRounds },
     });
   }
 
-  public joinRoom(roomCode: string, playerName: string = 'Guest Player'): void {
+  public joinRoom(roomCode: string, playerName: string = 'Guest'): void {
     this.send({
       type: 'JOIN_ROOM',
       payload: { roomCode, playerName },
     });
   }
 
-  public startMatch(autoFillBots: boolean = true): void {
+  public respondJoinRequest(requestId: string, accept: boolean, targetSeat?: PlayerPosition): void {
     this.send({
-      type: 'START_MATCH',
-      payload: { autoFillBots },
+      type: 'RESPOND_JOIN_REQUEST',
+      payload: { requestId, accept, targetSeat },
     });
   }
 
-  public startGame(autoFillBots: boolean = true): void {
-    this.startMatch(autoFillBots);
+  public convertToBot(seat: PlayerPosition): void {
+    this.send({
+      type: 'CONVERT_TO_BOT',
+      payload: { seat },
+    });
+  }
+
+  public startMatch(autoFillBots: boolean = true, totalRounds: number = 5): void {
+    this.send({
+      type: 'START_MATCH',
+      payload: { autoFillBots, totalRounds },
+    });
+  }
+
+  public startGame(autoFillBots: boolean = true, totalRounds: number = 5): void {
+    this.startMatch(autoFillBots, totalRounds);
+  }
+
+  public renameSeat(seat: PlayerPosition, name: string): void {
+    this.send({
+      type: 'RENAME_PLAYER',
+      payload: { seat, name },
+    });
+  }
+
+  public transferHost(targetSeat?: PlayerPosition, targetClientId?: string): void {
+    this.send({
+      type: 'TRANSFER_HOST',
+      payload: { targetSeat, targetClientId },
+    });
   }
 
   public rematch(): void {
@@ -417,6 +473,21 @@ export class MultiplayerClient {
   public onPlayerLeft(listener: PlayerLeftListener): () => void {
     this.playerLeftListeners.add(listener);
     return () => this.playerLeftListeners.delete(listener);
+  }
+
+  public onPlayerDisconnected(listener: PlayerDisconnectedListener): () => void {
+    this.playerDisconnectedListeners.add(listener);
+    return () => this.playerDisconnectedListeners.delete(listener);
+  }
+
+  public onJoinRequest(listener: JoinRequestListener): () => void {
+    this.joinRequestListeners.add(listener);
+    return () => this.joinRequestListeners.delete(listener);
+  }
+
+  public onJoinRequestStatus(listener: JoinRequestStatusListener): () => void {
+    this.joinRequestStatusListeners.add(listener);
+    return () => this.joinRequestStatusListeners.delete(listener);
   }
 }
 

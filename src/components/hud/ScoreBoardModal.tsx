@@ -29,7 +29,8 @@ export const ScoreBoardModal: React.FC<ScoreBoardModalProps> = ({
     PlayerPosition.EAST,
   ];
 
-  const rounds = [1, 2, 3, 4, 5];
+  const totalRounds = state.config?.totalRounds || 5;
+  const rounds = Array.from({ length: totalRounds }, (_, i) => i + 1);
 
   return (
     <div
@@ -50,7 +51,7 @@ export const ScoreBoardModal: React.FC<ScoreBoardModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-white tracking-tight">Call Break Scorecard</h2>
-              <p className="text-xs text-stone-400">Standard 5-Round Match Scoring Model</p>
+              <p className="text-xs text-stone-400">{totalRounds}-Round Match Scoring Model</p>
             </div>
           </div>
           <button
@@ -142,7 +143,7 @@ export const ScoreBoardModal: React.FC<ScoreBoardModalProps> = ({
             <ul className="list-disc list-inside space-y-1 text-[11px] text-stone-400 pl-1">
               <li>Achieved Bid: <code className="text-emerald-300 font-mono bg-stone-900 px-1 py-0.5 rounded border border-stone-800">Score = Bid + (Tricks Won - Bid) × 0.1</code></li>
               <li>Failed Bid (Under): <code className="text-rose-300 font-mono bg-stone-900 px-1 py-0.5 rounded border border-stone-800">Score = -Bid</code></li>
-              <li>5 Rounds total per match; highest cumulative score wins.</li>
+              <li>{totalRounds} Rounds total per match; highest cumulative score wins.</li>
             </ul>
           </div>
         </div>

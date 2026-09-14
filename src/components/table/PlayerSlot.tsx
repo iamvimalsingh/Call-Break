@@ -11,6 +11,8 @@ import { User, Bot, Sparkles, BrainCircuit, Clock } from 'lucide-react';
 import { PlayerPosition, PlayerState, PlayerType } from '../../models/player';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
+import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
+import { soundManager } from '../../core/sound/SoundManager';
 
 export interface PlayerTurnTimer {
   remainingSec: number;
@@ -37,6 +39,33 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
   const isSouth = position === PlayerPosition.SOUTH;
   const isSidePlayer = position === PlayerPosition.WEST || position === PlayerPosition.EAST;
   const prefersReducedMotion = useReducedMotion();
+
+  // Compute strict perspective name
+  const computeDisplayName = (): string => {
+    const raw = (player.name || '').replace(/\s*\(You\)$/i, '').trim();
+    if (isSouth) {
+      if (raw && raw !== 'Player' && raw !== 'You' && raw !== 'Host' && raw !== 'Host (Player 1)') {
+        return `${raw} (You)`;
+      }
+      return 'You';
+    }
+
+    const dirLabel = position.charAt(0) + position.slice(1).toLowerCase(); // 'West', 'North', 'East'
+    if (new RegExp(`\\(${dirLabel}\\)$`, 'i').test(raw)) {
+      return raw;
+    }
+
+    let base = raw;
+    if (!base || /^(friend|player|opponent)$/i.test(base)) {
+      if (position === PlayerPosition.WEST) base = 'Friend 1';
+      else if (position === PlayerPosition.NORTH) base = 'Friend 2';
+      else if (position === PlayerPosition.EAST) base = 'Friend 3';
+    }
+
+    return `${base} (${dirLabel})`;
+  };
+
+  const displayName = computeDisplayName();
 
   // Timer calculations
   const total = timer?.totalSec || (timer?.isExtraTime ? 15 : 45);
@@ -182,13 +211,9 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
                   ? 'text-[10px] xs:text-[11px] sm:text-xs max-w-[76px] xs:max-w-[88px] sm:max-w-[100px] truncate'
                   : 'text-[11px] xs:text-xs sm:text-sm max-w-[90px] sm:max-w-[120px] truncate'
               }`}
-              title={isSouth ? (player.name && player.name !== 'You' ? `${player.name} (You)` : 'You') : player.name}
+              title={displayName}
             >
-              {isSouth
-                ? player.name && player.name !== 'You'
-                  ? `${player.name} (You)`
-                  : 'You'
-                : player.name}
+              {displayName}
             </span>
 
             {/* Turn Timer Badge or Turn Pulse Dot */}
@@ -264,6 +289,24 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
             </>
           )}
         </div>
+      )}
+
+      {/* Host Option: Permanently Convert Auto-Play Seat to Bot */}
+      {!isSouth && player.name.toLowerCase().includes('auto-play') && sharedMultiplayerClient.isHost() && (
+        <button
+          type="button"
+          id={`btn-convert-to-bot-${position.toLowerCase()}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            soundManager.play('click');
+            sharedMultiplayerClient.convertToBot(position);
+          }}
+          className="mt-1 px-2 py-0.5 rounded-lg bg-stone-900/95 hover:bg-red-950/90 border border-amber-500/50 hover:border-red-500 text-[8px] sm:text-[9px] font-bold text-amber-300 hover:text-red-200 transition-colors flex items-center gap-1 cursor-pointer shadow-xs z-30"
+          title="Permanently Convert to Bot"
+        >
+          <Bot className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400 shrink-0" />
+          <span>Permanently Convert to Bot</span>
+        </button>
       )}
     </div>
   );

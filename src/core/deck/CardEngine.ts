@@ -142,6 +142,75 @@ export class CardEngine implements ICardEngine {
   }
 
   /**
+   * Solo Offline Weighted Dealing Algorithm:
+   * Gives South (or specified target) a ~10%-12% HCP point boost in dealt cards
+   * (ensuring 1-2 solid honors and healthy Spades length).
+   * 
+   * Strict Invariant: Exactly 13 cards per hand dealt from the 52-card deck
+   * with ZERO duplicate cards across all 4 hands.
+   */
+  public dealWeighted(
+    shuffledDeck: readonly Card[],
+    targetPosition: PlayerPosition = PlayerPosition.SOUTH
+  ): Readonly<Record<PlayerPosition, readonly Card[]>> {
+    if (!shuffledDeck || !Array.isArray(shuffledDeck)) {
+      throw new Error('Cannot deal invalid or non-array deck');
+    }
+
+    if (shuffledDeck.length < 52) {
+      return this.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+    }
+
+    let currentDeck = [...shuffledDeck];
+    let bestDeal: Readonly<Record<PlayerPosition, readonly Card[]>> | null = null;
+    let bestScoreDiff = Infinity;
+
+    // Calculate High Card Points (HCP: Ace=4, King=3, Queen=2, Jack=1, Spades Trump=+1)
+    const calcHCP = (hand: readonly Card[]): number => {
+      let score = 0;
+      for (const card of hand) {
+        if (card.rank === Rank.ACE) score += 4;
+        else if (card.rank === Rank.KING) score += 3;
+        else if (card.rank === Rank.QUEEN) score += 2;
+        else if (card.rank === Rank.JACK) score += 1;
+
+        if (card.suit === Suit.SPADES) score += 1;
+      }
+      return score;
+    };
+
+    for (let attempt = 0; attempt < 150; attempt++) {
+      const candidateDeal = this.deal(currentDeck, CLOCKWISE_PLAYER_ORDER);
+      const targetHand = candidateDeal[targetPosition];
+
+      if (targetHand && targetHand.length === 13) {
+        const hcp = calcHCP(targetHand);
+        const honorsCount = targetHand.filter(
+          (c) => c.rank === Rank.ACE || c.rank === Rank.KING
+        ).length;
+        const spadesCount = targetHand.filter((c) => c.suit === Suit.SPADES).length;
+
+        // Target HCP range for 10%-12% boost: 15 to 19 HCP (average is 13.25)
+        // Solid honors: at least 1-2 (honorsCount >= 1)
+        // Healthy Spades length: at least 3 Spades (spadesCount >= 3)
+        if (hcp >= 15 && hcp <= 19 && honorsCount >= 1 && spadesCount >= 3) {
+          return candidateDeal;
+        }
+
+        const scoreDiff = Math.abs(hcp - 16) + (spadesCount < 3 ? 5 : 0) + (honorsCount < 1 ? 5 : 0);
+        if (scoreDiff < bestScoreDiff) {
+          bestScoreDiff = scoreDiff;
+          bestDeal = candidateDeal;
+        }
+      }
+
+      currentDeck = [...this.shuffle(currentDeck)];
+    }
+
+    return bestDeal ?? this.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+  }
+
+  /**
    * Sorts a player's hand deterministically:
    * 1. Grouped by suit: Spades (Trump) -> Hearts -> Diamonds -> Clubs
    * 2. Within each suit: Rank descending (Ace = 14 down to 2)

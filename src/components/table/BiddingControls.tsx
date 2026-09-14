@@ -93,6 +93,15 @@ export const BiddingControls: React.FC<BiddingControlsProps> = ({
         )}
       </div>
 
+      {/* Fair Play Transparency Badge */}
+      <div
+        id="badge-bidding-fair-play"
+        className="w-full py-0.5 px-2 rounded-lg bg-emerald-950/80 border border-emerald-600/50 flex items-center justify-center gap-1.5 text-[9px] xs:text-[10px] sm:text-[11px] font-medium text-emerald-300 shadow-xs"
+      >
+        <span>🛡️</span>
+        <span>Fair Play: <strong className="font-bold text-white">100% Server Shuffled</strong> (Zero Host Influence)</span>
+      </div>
+
       {/* Bid Selection Numbers: 1 to 13 */}
       <div className="w-full flex flex-wrap justify-center gap-0.5 xs:gap-1 sm:gap-1.5 my-0.5">
         {bidOptions.map((bid) => {

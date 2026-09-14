@@ -16,6 +16,7 @@ import { buildPhase10SettingsTutorialTestSuite } from './phase10SettingsTutorial
 import { buildPhase11SaveResumeTestSuite } from './phase11SaveResume.test';
 import { buildPhase12QASimulatorTestSuite } from './phase12QASimulator.test';
 import { buildPhase14NetlifyPWATestSuite } from './phase14NetlifyPWA.test';
+import { buildSoloWeightedDealTestSuite } from './soloWeightedDeal.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -31,6 +32,7 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildPhase11SaveResumeTestSuite());
   composite.include(buildPhase12QASimulatorTestSuite());
   composite.include(buildPhase14NetlifyPWATestSuite());
+  composite.include(buildSoloWeightedDealTestSuite());
   return composite;
 }
 
@@ -46,4 +48,5 @@ export { buildPhase10SettingsTutorialTestSuite } from './phase10SettingsTutorial
 export { buildPhase11SaveResumeTestSuite } from './phase11SaveResume.test';
 export { buildPhase12QASimulatorTestSuite } from './phase12QASimulator.test';
 export { buildPhase14NetlifyPWATestSuite } from './phase14NetlifyPWA.test';
+export { buildSoloWeightedDealTestSuite } from './soloWeightedDeal.test';
 export * from './testHarness';

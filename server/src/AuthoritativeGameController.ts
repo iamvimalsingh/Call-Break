@@ -156,8 +156,11 @@ export class AuthoritativeGameController {
 
   /**
    * Initializes a multiplayer match with assigned players and starts Round 1.
+   * STRICT MULTIPLAYER FAIRNESS GUARD:
+   * GameMode is set to ONLINE_MULTIPLAYER, ensuring 100% unweighted uniform random
+   * cryptographic Fisher-Yates dealing with zero card bias or player favoritism.
    */
-  public initializeMatch(players: Record<PlayerPosition, PlayerSetupInfo>): void {
+  public initializeMatch(players: Record<PlayerPosition, PlayerSetupInfo>, totalRounds: number = 5): void {
     const rawState = createInitialGameState(GameMode.ONLINE_MULTIPLAYER);
 
     const configuredPlayers: Record<PlayerPosition, PlayerState> = {
@@ -191,6 +194,7 @@ export class AuthoritativeGameController {
       ...rawState,
       config: {
         ...rawState.config,
+        totalRounds: totalRounds === 10 ? 10 : 5,
         enableRebiddingRule: true,
       },
       players: configuredPlayers,
@@ -474,10 +478,44 @@ export class AuthoritativeGameController {
       players: nextPlayers,
     });
 
-    // If this seat was currently taking a turn, clear human timer and trigger bot move immediately
+    // Assign MediumBotStrategy
+    this.controller.bindBotStrategy(position, new MediumBotStrategy());
+
+    // CRITICAL ANTI-STALL LOGIC:
+    // If this seat was currently taking a turn:
+    // DO NOT wait for timer timeouts or leave the table frozen!
+    // Within 500ms, trigger the bot move/bid immediately so the trick advances.
     if (state.currentPlayer === position) {
       this.clearTurnTimer();
-      this.advanceTurnOrStepBot();
+      if (this.botTimer) {
+        clearTimeout(this.botTimer);
+        this.botTimer = null;
+      }
+
+      this.botTimer = setTimeout(() => {
+        const cur = this.store.getState();
+        if (cur.currentPlayer === position) {
+          if (cur.status === GameStatus.BIDDING) {
+            this.controller.executeBotBid(position);
+            this.advanceTurnOrStepBot();
+          } else if (cur.status === GameStatus.PLAYING) {
+            const legalMoves = this.controller.getLegalMovesForPlayer(position);
+            if (legalMoves.length > 0) {
+              const sorted = [...legalMoves].sort((a, b) => a.value - b.value);
+              this.playCard(position, sorted[0]);
+            } else {
+              const didStep = this.controller.stepBotTurn();
+              if (didStep) {
+                if (this.store.getState().currentTrick.cards.length === 4) {
+                  this.scheduleTrickResolution();
+                } else {
+                  this.advanceTurnOrStepBot();
+                }
+              }
+            }
+          }
+        }
+      }, 500);
     }
 
     return true;

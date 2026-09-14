@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GameMode, GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
 import { Card } from '../../models/card';
-import { TurnTimerPayload, ToastPayload } from '../../models/multiplayer';
+import { TurnTimerPayload, ToastPayload, JoinRequestPayload } from '../../models/multiplayer';
 import { sharedGameStore } from '../../core/state/gameStore';
 import { LocalGameController } from '../../core/controller/LocalGameController';
 import { CardEngine } from '../../core/deck/CardEngine';
@@ -34,6 +34,7 @@ import { GameModeModal } from '../modals/GameModeModal';
 import { RoomLobbyModal } from '../modals/RoomLobbyModal';
 import { LeaveMatchModal } from '../modals/LeaveMatchModal';
 import { TableMenuModal } from '../modals/TableMenuModal';
+import { JoinRequestModal } from '../modals/JoinRequestModal';
 import { BotDifficulty } from '../../core/contracts/IBotStrategy';
 import { useSettings } from '../../core/settings/useSettings';
 import { sharedHistoryService } from '../../core/history/HistoryService';
@@ -71,6 +72,7 @@ export const GameShell: React.FC = () => {
   });
   const [turnTimer, setTurnTimer] = useState<TurnTimerPayload | null>(null);
   const [toast, setToast] = useState<{ id: string; message: string; type?: string } | null>(null);
+  const [joinRequest, setJoinRequest] = useState<JoinRequestPayload | null>(null);
 
   const { settings } = useSettings();
   const { isMuted, toggleMute } = useSound();
@@ -181,6 +183,10 @@ export const GameShell: React.FC = () => {
       });
     });
 
+    const unsubJoinReq = sharedMultiplayerClient.onJoinRequest((req) => {
+      setJoinRequest(req);
+    });
+
     return () => {
       unsubState();
       unsubStarted();
@@ -188,6 +194,7 @@ export const GameShell: React.FC = () => {
       unsubRoom();
       unsubTimer();
       unsubToast();
+      unsubJoinReq();
     };
   }, [isMuted]);
 
@@ -467,11 +474,11 @@ export const GameShell: React.FC = () => {
   }, []);
 
   // User Actions
-  const handleStartNewMatch = useCallback(() => {
+  const handleStartNewMatch = useCallback((totalRounds: number = 5) => {
     if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
       sharedMultiplayerClient.leaveRoom();
     }
-    controller.startNewMatch(GameMode.OFFLINE_BOTS, true);
+    controller.startNewMatch(GameMode.OFFLINE_BOTS, true, totalRounds);
     sharedActiveGameService.clearActiveGame();
     setIsHomeOpen(false);
     setIsFinalResultOpen(false);
@@ -493,16 +500,16 @@ export const GameShell: React.FC = () => {
         });
       }
     } else {
-      handleStartNewMatch();
+      handleStartNewMatch(gameState.config?.totalRounds || 5);
     }
-  }, [gameState.mode, isHost, handleStartNewMatch]);
+  }, [gameState.mode, gameState.config?.totalRounds, isHost, handleStartNewMatch]);
 
   const handleSelectSolo = useCallback(
-    (difficulty: BotDifficulty) => {
+    (difficulty: BotDifficulty, totalRounds: 5 | 10) => {
       guardActiveMatch(() => {
         setBotDifficulty(difficulty);
         setIsGameModeOpen(false);
-        handleStartNewMatch();
+        handleStartNewMatch(totalRounds);
       });
     },
     [guardActiveMatch, handleStartNewMatch]
@@ -1018,6 +1025,15 @@ export const GameShell: React.FC = () => {
         isMultiplayer={gameState.mode === GameMode.ONLINE_MULTIPLAYER || Boolean(roomCode)}
         onCancel={handleCancelLeaveMatch}
         onConfirmLeave={handleConfirmLeaveMatch}
+      />
+
+      {/* Host Join Request Approval Modal for Mid-Game Joins */}
+      <JoinRequestModal
+        request={joinRequest}
+        onRespond={(reqId, accept) => {
+          sharedMultiplayerClient.respondJoinRequest(reqId, accept);
+          setJoinRequest(null);
+        }}
       />
 
       {/* Offline Status Indicator */}

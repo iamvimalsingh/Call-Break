@@ -28,7 +28,7 @@ export interface GameModeModalProps {
   isOpen: boolean;
   currentDifficulty?: BotDifficulty;
   onClose: () => void;
-  onSelectSolo: (difficulty: BotDifficulty) => void;
+  onSelectSolo: (difficulty: BotDifficulty, totalRounds: 5 | 10) => void;
   onSelectFriends: () => void;
 }
 
@@ -41,6 +41,7 @@ export const GameModeModal: React.FC<GameModeModalProps> = ({
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const [selectedDifficulty, setSelectedDifficulty] = useState<BotDifficulty>(currentDifficulty);
+  const [totalRounds, setTotalRounds] = useState<5 | 10>(5);
 
   if (!isOpen) return null;
 
@@ -191,13 +192,57 @@ export const GameModeModal: React.FC<GameModeModalProps> = ({
                 </div>
               </div>
 
+              {/* Match Length Selector */}
+              <div className="mb-3.5 pt-2 border-t border-stone-800/60">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-mono text-stone-400 uppercase tracking-wider font-semibold">
+                    Match Length
+                  </span>
+                  <span className="text-[11px] text-amber-400 font-bold font-mono">
+                    {totalRounds === 10 ? '10 Rounds' : '5 Rounds'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    id="btn-solo-rounds-5"
+                    onClick={() => {
+                      soundManager.play('click');
+                      setTotalRounds(5);
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      totalRounds === 5
+                        ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm ring-1 ring-emerald-500/40'
+                        : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:bg-stone-800/80 hover:text-stone-200'
+                    }`}
+                  >
+                    <span>5 Rounds (Standard)</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-solo-rounds-10"
+                    onClick={() => {
+                      soundManager.play('click');
+                      setTotalRounds(10);
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      totalRounds === 10
+                        ? 'bg-amber-950/80 border-amber-500/80 text-amber-300 shadow-sm ring-1 ring-amber-500/40'
+                        : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:bg-stone-800/80 hover:text-stone-200'
+                    }`}
+                  >
+                    <span>10 Rounds (Championship)</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Start Solo Button */}
               <button
                 type="button"
                 id="btn-start-solo-mode"
                 onClick={() => {
                   soundManager.play('deal');
-                  onSelectSolo(selectedDifficulty);
+                  onSelectSolo(selectedDifficulty, totalRounds);
                 }}
                 className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-emerald-950/50 transition-all cursor-pointer"
               >

@@ -9,7 +9,7 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GameState, GameStatus } from '../../models/gameState';
-import { PlayerPosition } from '../../models/player';
+import { PlayerPosition, PlayerState } from '../../models/player';
 import { Card } from '../../models/card';
 import { TurnTimerPayload } from '../../models/multiplayer';
 import { PlayerSlot } from './PlayerSlot';
@@ -60,11 +60,33 @@ export const GameTable: React.FC<GameTableProps> = ({
       ? state.completedTricks[state.completedTricks.length - 1]
       : null;
 
+  const getPlayerDisplayName = (pos: PlayerPosition, p?: PlayerState): string => {
+    if (!p) return pos;
+    const isSouth = pos === PlayerPosition.SOUTH;
+    const raw = (p.name || '').replace(/\s*\(You\)$/i, '').trim();
+    if (isSouth) {
+      return raw && raw !== 'Player' && raw !== 'You' && raw !== 'Host' && raw !== 'Host (Player 1)'
+        ? `${raw} (You)`
+        : 'You';
+    }
+    const dir = pos.charAt(0) + pos.slice(1).toLowerCase();
+    if (new RegExp(`\\(${dir}\\)$`, 'i').test(raw)) {
+      return raw;
+    }
+    let base = raw;
+    if (!base || /^(friend|player|opponent)$/i.test(base)) {
+      if (pos === PlayerPosition.WEST) base = 'Friend 1';
+      else if (pos === PlayerPosition.NORTH) base = 'Friend 2';
+      else if (pos === PlayerPosition.EAST) base = 'Friend 3';
+    }
+    return `${base} (${dir})`;
+  };
+
   const playerNames: Record<PlayerPosition, string> = {
-    [PlayerPosition.SOUTH]: southPlayer?.name && southPlayer.name !== 'You' ? southPlayer.name : 'You',
-    [PlayerPosition.WEST]: westPlayer?.name ?? 'West',
-    [PlayerPosition.NORTH]: northPlayer?.name ?? 'North',
-    [PlayerPosition.EAST]: eastPlayer?.name ?? 'East',
+    [PlayerPosition.SOUTH]: getPlayerDisplayName(PlayerPosition.SOUTH, southPlayer),
+    [PlayerPosition.WEST]: getPlayerDisplayName(PlayerPosition.WEST, westPlayer),
+    [PlayerPosition.NORTH]: getPlayerDisplayName(PlayerPosition.NORTH, northPlayer),
+    [PlayerPosition.EAST]: getPlayerDisplayName(PlayerPosition.EAST, eastPlayer),
   };
 
   const isBiddingPhase = state.status === GameStatus.BIDDING;

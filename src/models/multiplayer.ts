@@ -25,6 +25,7 @@ export interface RoomState {
   assignedPosition?: PlayerPosition;
   myClientId?: string;
   autoFillBots: boolean;
+  totalRounds?: number;
 }
 
 export type ConnectionState = 'CONNECTING' | 'OPEN' | 'CLOSED' | 'ERROR';
@@ -42,11 +43,35 @@ export interface ToastPayload {
   type?: 'info' | 'warning' | 'success';
 }
 
+export interface JoinRequestSeatOption {
+  seat: PlayerPosition;
+  type: 'auto_play' | 'bot';
+  label: string;
+}
+
+export interface JoinRequestPayload {
+  requestId: string;
+  playerName: string;
+  clientId: string;
+  position?: PlayerPosition;
+  availableSeats?: JoinRequestSeatOption[];
+}
+
+export interface JoinRequestStatusPayload {
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  message?: string;
+  requestId?: string;
+}
+
 export type ClientMessage =
-  | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string } }
+  | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string; totalRounds?: number } }
   | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string } }
-  | { type: 'START_MATCH'; payload?: { autoFillBots?: boolean } }
-  | { type: 'START_GAME'; payload?: { autoFillBots?: boolean } }
+  | { type: 'RESPOND_JOIN_REQUEST'; payload: { requestId: string; accept: boolean; targetSeat?: PlayerPosition } }
+  | { type: 'CONVERT_TO_BOT'; payload: { seat: PlayerPosition } }
+  | { type: 'START_MATCH'; payload?: { autoFillBots?: boolean; totalRounds?: number } }
+  | { type: 'START_GAME'; payload?: { autoFillBots?: boolean; totalRounds?: number } }
+  | { type: 'RENAME_PLAYER'; payload: { seat: PlayerPosition; name: string } }
+  | { type: 'TRANSFER_HOST'; payload: { targetSeat?: PlayerPosition; targetClientId?: string } }
   | { type: 'SUBMIT_BID'; payload: { bid: number } }
   | { type: 'PLAY_CARD'; payload: { card: Card } }
   | { type: 'NEXT_ROUND' }
@@ -60,6 +85,9 @@ export type ServerMessage =
   | { type: 'MATCH_SYNC'; payload: { roomCode: string; state: GameState; myPosition: PlayerPosition; rawPosition: PlayerPosition } }
   | { type: 'GAME_STATE'; payload: { state: GameState; myPosition: PlayerPosition; rawPosition: PlayerPosition } }
   | { type: 'PLAYER_LEFT'; payload: { clientId: string; playerName: string; position: PlayerPosition } }
+  | { type: 'PLAYER_DISCONNECTED'; payload: { seat: PlayerPosition; playerName: string } }
+  | { type: 'JOIN_REQUEST'; payload: JoinRequestPayload }
+  | { type: 'JOIN_REQUEST_STATUS'; payload: JoinRequestStatusPayload }
   | { type: 'TURN_TIMER'; payload: TurnTimerPayload }
   | { type: 'TURN_TIMER_TICK'; payload: TurnTimerPayload }
   | { type: 'TOAST_NOTIFICATION'; payload: ToastPayload }

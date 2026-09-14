@@ -22,7 +22,7 @@ export function createInitialPlayers() {
     },
     [PlayerPosition.WEST]: {
       id: 'player_west',
-      name: 'West Player',
+      name: 'Bot: Shield',
       type: PlayerType.BOT,
       position: PlayerPosition.WEST,
       hand: [],
@@ -33,7 +33,7 @@ export function createInitialPlayers() {
     },
     [PlayerPosition.NORTH]: {
       id: 'player_north',
-      name: 'North Player',
+      name: 'Bot: Shark',
       type: PlayerType.BOT,
       position: PlayerPosition.NORTH,
       hand: [],
@@ -44,7 +44,7 @@ export function createInitialPlayers() {
     },
     [PlayerPosition.EAST]: {
       id: 'player_east',
-      name: 'East Player',
+      name: 'Bot: Tactician',
       type: PlayerType.BOT,
       position: PlayerPosition.EAST,
       hand: [],

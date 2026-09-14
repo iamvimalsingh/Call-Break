@@ -26,6 +26,14 @@ export interface ICardEngine {
   ): Readonly<Record<PlayerPosition, readonly Card[]>>;
 
   /**
+   * Deals cards with a 10%-12% point boost for a target position in Solo Offline mode.
+   */
+  dealWeighted?(
+    shuffledDeck: readonly Card[],
+    targetPosition?: PlayerPosition
+  ): Readonly<Record<PlayerPosition, readonly Card[]>>;
+
+  /**
    * Sorts player hand by suit (Spades, Hearts, Clubs, Diamonds) then rank descending.
    */
   sortHand(hand: readonly Card[]): readonly Card[];

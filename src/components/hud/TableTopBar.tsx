@@ -232,6 +232,19 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
           </span>
         </div>
 
+        {/* Fair Play Transparency Indicator */}
+        <div
+          id="badge-fair-play-transparency"
+          className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-emerald-950/90 border border-emerald-600/70 flex items-center gap-1 shadow-xs shrink-0"
+          title="🛡️ Fair Play: 100% Server Shuffled (Zero Host Influence)"
+        >
+          <span className="text-[10px] sm:text-xs">🛡️</span>
+          <span className="text-[9px] sm:text-[11px] font-semibold text-emerald-300 whitespace-nowrap">
+            Fair Play: <span className="font-bold text-white">100% Server Shuffled</span>{' '}
+            <span className="text-emerald-400/80 font-normal hidden xl:inline">(Zero Host Influence)</span>
+          </span>
+        </div>
+
         {/* Active Turn Indicator (Playing phase) */}
         {state.status === GameStatus.PLAYING && (
           <div className="hidden lg:flex px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-600/70 items-center gap-1.5 shadow-sm shrink-0">

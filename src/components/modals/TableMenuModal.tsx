@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Users,
   Settings,
+  Crown,
 } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useSound } from '../../core/sound/useSound';
@@ -33,6 +34,7 @@ import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
 import { GameState } from '../../models/gameState';
 import { SUIT_CONFIG } from '../../models/card';
+import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
 
 export interface TableMenuModalProps {
   isOpen: boolean;
@@ -65,6 +67,11 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const { isMuted, toggleMute } = useSound();
+
+  const roomState = sharedMultiplayerClient.getRoomState();
+  const otherHumanParticipants = roomState
+    ? roomState.players.filter((p) => !p.isBot && p.id !== roomState.myClientId)
+    : [];
 
   // Haptic feedback state
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(() => {
@@ -188,6 +195,49 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
               <Play className="w-4 h-4 fill-white" />
               <span>Resume Game</span>
             </button>
+
+            {/* Host Administrative Controls */}
+            {isHost && roomCode && (
+              <div id="host-controls-section" className="p-3 rounded-2xl bg-amber-950/40 border border-amber-800/50 text-left">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Crown className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="text-[11px] font-bold text-amber-300 uppercase font-mono tracking-wider">
+                    Host Controls • Transfer Host Role
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {otherHumanParticipants.length > 0 ? (
+                    otherHumanParticipants.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className="flex items-center justify-between p-2 rounded-xl bg-stone-900/90 border border-stone-800 text-xs"
+                      >
+                        <span className="font-bold text-stone-200 truncate max-w-[140px]">
+                          {participant.name.replace(/\s*\(You\)$/i, '').replace(/\s*\(Host\)$/i, '')} ({participant.position})
+                        </span>
+                        <button
+                          type="button"
+                          id={`btn-transfer-host-menu-${participant.position}`}
+                          onClick={() => {
+                            soundManager.play('click');
+                            sharedMultiplayerClient.transferHost(participant.position, participant.id);
+                            onClose();
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                        >
+                          <Crown className="w-3 h-3" />
+                          <span>Transfer Host</span>
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[10px] text-stone-400 italic">
+                      No other connected human players to transfer host role to.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 2. Sound & Haptic Controls */}
             <div className="grid grid-cols-2 gap-2 pt-1">

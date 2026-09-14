@@ -24,6 +24,8 @@ import {
   Loader2,
   LogOut,
   RefreshCw,
+  Edit3,
+  Pencil,
 } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
@@ -58,12 +60,23 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const [activeTab, setActiveTab] = useState<'create' | 'join'>(initialTab);
+  const [playerName, setPlayerName] = useState<string>(() => {
+    try {
+      return localStorage.getItem('cb_player_name') || '';
+    } catch {
+      return '';
+    }
+  });
   const [roomCode, setRoomCode] = useState<string>(() => generateRoomCode());
   const [joinInputCode, setJoinInputCode] = useState<string>(initialRoomCode || prefilledRoomCode || '');
   const [copied, setCopied] = useState(false);
   const [autoFillBots, setAutoFillBots] = useState(true);
+  const [totalRounds, setTotalRounds] = useState<5 | 10>(5);
+  const [editingSeat, setEditingSeat] = useState<PlayerPosition | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
+  const [pendingApprovalMsg, setPendingApprovalMsg] = useState<string | null>(null);
   const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>(() =>
@@ -78,6 +91,31 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
   const onStartRoomMatchRef = useRef(onStartRoomMatch);
   onStartRoomMatchRef.current = onStartRoomMatch;
+
+  const handlePlayerNameChange = (val: string) => {
+    setPlayerName(val);
+    try {
+      localStorage.setItem('cb_player_name', val);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleStartSeatRename = (pos: PlayerPosition, currentName: string) => {
+    setEditingSeat(pos);
+    setEditingName(currentName);
+    soundManager.play('click');
+  };
+
+  const handleSaveSeatRename = (pos: PlayerPosition) => {
+    const clean = editingName.trim();
+    if (pos === PlayerPosition.SOUTH && clean) {
+      handlePlayerNameChange(clean);
+    }
+    sharedMultiplayerClient.renameSeat(pos, clean);
+    setEditingSeat(null);
+    soundManager.play('click');
+  };
 
   // Connect to WebSocket server on modal open
   useEffect(() => {
@@ -102,6 +140,9 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     const unsubRoom = sharedMultiplayerClient.onRoomState((state) => {
       setRoomState(state);
       setRoomCode(state.roomCode);
+      if (state.totalRounds) {
+        setTotalRounds(state.totalRounds === 10 ? 10 : 5);
+      }
       if (activeTab === 'join' && isJoining) {
         setIsJoining(false);
         setHasJoinedRoom(true);
@@ -130,8 +171,24 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       }
       setJoinError(msg);
       setIsJoining(false);
+      setPendingApprovalMsg(null);
       setHasJoinedRoom(false);
       soundManager.play('warning');
+    });
+
+    const unsubJoinStatus = sharedMultiplayerClient.onJoinRequestStatus((statusPayload) => {
+      if (statusPayload.status === 'PENDING') {
+        setIsJoining(true);
+        setPendingApprovalMsg(statusPayload.message || 'Waiting for table host to accept your request...');
+      } else if (statusPayload.status === 'ACCEPTED') {
+        setIsJoining(false);
+        setPendingApprovalMsg(null);
+        setHasJoinedRoom(true);
+      } else if (statusPayload.status === 'DECLINED') {
+        setIsJoining(false);
+        setPendingApprovalMsg(null);
+        setJoinError(statusPayload.message || 'Host declined your request to join.');
+      }
     });
 
     return () => {
@@ -139,6 +196,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       unsubRoom();
       unsubGameStarted();
       unsubError();
+      unsubJoinStatus();
     };
   }, [isOpen, activeTab]);
 
@@ -147,7 +205,8 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     if (!isOpen) return;
 
     if (activeTab === 'create' && !hasJoinedRoom) {
-      sharedMultiplayerClient.createRoom('Host Player (You)', roomCode);
+      const effectiveHost = playerName.trim() || 'Host (Player 1)';
+      sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
     }
   }, [isOpen, activeTab, roomCode, hasJoinedRoom, connectionState]);
 
@@ -178,7 +237,8 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       .connect()
       .then(() => {
         if (activeTab === 'create') {
-          sharedMultiplayerClient.createRoom('Host Player (You)', roomCode);
+          const effectiveHost = playerName.trim() || 'Host (Player 1)';
+          sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
         }
       })
       .catch((err) => {
@@ -219,7 +279,8 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     const newCode = generateRoomCode();
     setRoomCode(newCode);
     soundManager.play('deal');
-    sharedMultiplayerClient.createRoom('Host Player (You)', newCode);
+    const effectiveHost = playerName.trim() || 'Host (Player 1)';
+    sharedMultiplayerClient.createRoom(effectiveHost, newCode);
   };
 
   const handleJoinSubmit = (e: React.FormEvent) => {
@@ -233,12 +294,12 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     setJoinError(null);
     setIsJoining(true);
     soundManager.play('deal');
-    sharedMultiplayerClient.joinRoom(clean, 'Friend (You)');
+    sharedMultiplayerClient.joinRoom(clean, playerName.trim());
   };
 
   const handleStartCreatedRoom = () => {
     soundManager.play('deal');
-    sharedMultiplayerClient.startMatch(autoFillBots);
+    sharedMultiplayerClient.startMatch(autoFillBots, totalRounds);
   };
 
   const handleLeaveLobby = () => {
@@ -425,6 +486,31 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
           {/* Tab Content: CREATE ROOM OR JOINED ROOM WAITING LOBBY */}
           {(activeTab === 'create' || hasJoinedRoom) && (
             <div className="space-y-4">
+              {/* Player Name / Nickname Input for Host (if not joined yet) */}
+              {!hasJoinedRoom && (
+                <div className="p-3 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1.5">
+                  <label htmlFor="input-host-name" className="block text-xs font-semibold text-stone-300">
+                    Your Name / Nickname <span className="text-stone-500 font-normal">(Optional)</span>:
+                  </label>
+                  <input
+                    type="text"
+                    id="input-host-name"
+                    value={playerName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      handlePlayerNameChange(val);
+                      if (activeTab === 'create' && !hasJoinedRoom) {
+                        const effectiveHost = val.trim() || 'Host (Player 1)';
+                        sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
+                      }
+                    }}
+                    placeholder="e.g. Rahul (defaults to Host)"
+                    maxLength={18}
+                    className="w-full px-3.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-500"
+                  />
+                </div>
+              )}
+
               {/* Room Code Card */}
               <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-900/60 flex flex-col items-center text-center shadow-inner relative">
                 <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold mb-1">
@@ -489,7 +575,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 <div className="flex items-center justify-between text-xs text-stone-400 font-medium px-1">
                   <span>Table Seats (4 Players)</span>
                   <span className="font-mono text-[11px] text-emerald-400">
-                    {totalConnected}/4 Ready
+                    {totalConnected}/4 Ready {isHost && '• Click seat to rename'}
                   </span>
                 </div>
 
@@ -497,97 +583,335 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                   {/* Slot 1: South (Host) */}
                   <div
                     id="lobby-seat-south"
-                    className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-700/60 flex items-center gap-2"
+                    className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-700/60 flex items-center justify-between gap-2"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-emerald-800 flex items-center justify-center text-amber-300 shrink-0">
-                      <Crown className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-white truncate text-xs">
-                        {southPlayer?.name ?? 'Host Player'}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-800 flex items-center justify-center text-amber-300 shrink-0">
+                        <Crown className="w-4 h-4" />
                       </div>
-                      <div className="text-[10px] text-emerald-300 font-mono">South • Host</div>
+                      <div className="min-w-0">
+                        {editingSeat === PlayerPosition.SOUTH ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.SOUTH);
+                              }}
+                              autoFocus
+                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-emerald-500 text-white text-xs w-24 focus:outline-hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSeatRename(PlayerPosition.SOUTH)}
+                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="font-bold text-white truncate text-xs">
+                              {southPlayer?.name ?? (playerName.trim() || 'Host')}
+                            </div>
+                            <div className="text-[10px] text-emerald-300 font-mono">South • Host</div>
+                          </>
+                        )}
+                      </div>
                     </div>
+                    {isHost && editingSeat !== PlayerPosition.SOUTH && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartSeatRename(PlayerPosition.SOUTH, southPlayer?.name ?? (playerName.trim() || 'Host'))}
+                        className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                        title="Rename South"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Slot 2: West */}
                   <div
                     id="lobby-seat-west"
-                    className={`p-2.5 rounded-xl flex items-center gap-2 transition-all ${
+                    className={`p-2.5 rounded-xl flex items-center justify-between gap-2 transition-all ${
                       westPlayer
                         ? 'bg-emerald-950/60 border border-emerald-700/60'
                         : 'bg-stone-900/80 border border-stone-800'
                     }`}
                   >
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        westPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
-                      }`}
-                    >
-                      {westPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className={`font-bold truncate text-xs ${westPlayer ? 'text-white' : 'text-stone-400'}`}>
-                        {westPlayer ? westPlayer.name : 'Waiting for friend...'}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                          westPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
+                        }`}
+                      >
+                        {westPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                       </div>
-                      <div className="text-[10px] text-stone-400 font-mono">
-                        West {westPlayer ? '• Ready' : '• Bot if unfilled'}
+                      <div className="min-w-0">
+                        {editingSeat === PlayerPosition.WEST ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.WEST);
+                              }}
+                              autoFocus
+                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs w-24 focus:outline-hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSeatRename(PlayerPosition.WEST)}
+                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`font-bold truncate text-xs ${westPlayer ? 'text-white' : 'text-stone-400'}`}>
+                              {westPlayer ? westPlayer.name : 'Friend 1'}
+                            </div>
+                            <div className="text-[10px] text-stone-400 font-mono">
+                              West {westPlayer ? '• Ready' : '• Bot if empty'}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
+                    {isHost && editingSeat !== PlayerPosition.WEST && (
+                      <div className="flex items-center gap-1">
+                        {westPlayer && !westPlayer.isBot && westPlayer.id !== roomState?.myClientId && (
+                          <button
+                            type="button"
+                            id="btn-transfer-host-west"
+                            onClick={() => {
+                              soundManager.play('click');
+                              sharedMultiplayerClient.transferHost(PlayerPosition.WEST);
+                            }}
+                            className="p-1 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-600/60 text-amber-300 cursor-pointer transition-colors"
+                            title="👑 Transfer Host Role to West"
+                          >
+                            <Crown className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleStartSeatRename(PlayerPosition.WEST, westPlayer?.name || 'Friend 1')}
+                          className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                          title="Rename West"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Slot 3: North */}
                   <div
                     id="lobby-seat-north"
-                    className={`p-2.5 rounded-xl flex items-center gap-2 transition-all ${
+                    className={`p-2.5 rounded-xl flex items-center justify-between gap-2 transition-all ${
                       northPlayer
                         ? 'bg-emerald-950/60 border border-emerald-700/60'
                         : 'bg-stone-900/80 border border-stone-800'
                     }`}
                   >
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        northPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
-                      }`}
-                    >
-                      {northPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className={`font-bold truncate text-xs ${northPlayer ? 'text-white' : 'text-stone-400'}`}>
-                        {northPlayer ? northPlayer.name : 'Waiting for friend...'}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                          northPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
+                        }`}
+                      >
+                        {northPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                       </div>
-                      <div className="text-[10px] text-stone-400 font-mono">
-                        North {northPlayer ? '• Ready' : '• Bot if unfilled'}
+                      <div className="min-w-0">
+                        {editingSeat === PlayerPosition.NORTH ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.NORTH);
+                              }}
+                              autoFocus
+                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs w-24 focus:outline-hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSeatRename(PlayerPosition.NORTH)}
+                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`font-bold truncate text-xs ${northPlayer ? 'text-white' : 'text-stone-400'}`}>
+                              {northPlayer ? northPlayer.name : 'Friend 2'}
+                            </div>
+                            <div className="text-[10px] text-stone-400 font-mono">
+                              North {northPlayer ? '• Ready' : '• Bot if empty'}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
+                    {isHost && editingSeat !== PlayerPosition.NORTH && (
+                      <div className="flex items-center gap-1">
+                        {northPlayer && !northPlayer.isBot && northPlayer.id !== roomState?.myClientId && (
+                          <button
+                            type="button"
+                            id="btn-transfer-host-north"
+                            onClick={() => {
+                              soundManager.play('click');
+                              sharedMultiplayerClient.transferHost(PlayerPosition.NORTH);
+                            }}
+                            className="p-1 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-600/60 text-amber-300 cursor-pointer transition-colors"
+                            title="👑 Transfer Host Role to North"
+                          >
+                            <Crown className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleStartSeatRename(PlayerPosition.NORTH, northPlayer?.name || 'Friend 2')}
+                          className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                          title="Rename North"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Slot 4: East */}
                   <div
                     id="lobby-seat-east"
-                    className={`p-2.5 rounded-xl flex items-center gap-2 transition-all ${
+                    className={`p-2.5 rounded-xl flex items-center justify-between gap-2 transition-all ${
                       eastPlayer
                         ? 'bg-emerald-950/60 border border-emerald-700/60'
                         : 'bg-stone-900/80 border border-stone-800'
                     }`}
                   >
-                    <div
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        eastPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
-                      }`}
-                    >
-                      {eastPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className={`font-bold truncate text-xs ${eastPlayer ? 'text-white' : 'text-stone-400'}`}>
-                        {eastPlayer ? eastPlayer.name : 'Waiting for friend...'}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                          eastPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
+                        }`}
+                      >
+                        {eastPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                       </div>
-                      <div className="text-[10px] text-stone-400 font-mono">
-                        East {eastPlayer ? '• Ready' : '• Bot if unfilled'}
+                      <div className="min-w-0">
+                        {editingSeat === PlayerPosition.EAST ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.EAST);
+                              }}
+                              autoFocus
+                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs w-24 focus:outline-hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSeatRename(PlayerPosition.EAST)}
+                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`font-bold truncate text-xs ${eastPlayer ? 'text-white' : 'text-stone-400'}`}>
+                              {eastPlayer ? eastPlayer.name : 'Friend 3'}
+                            </div>
+                            <div className="text-[10px] text-stone-400 font-mono">
+                              East {eastPlayer ? '• Ready' : '• Bot if empty'}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
+                    {isHost && editingSeat !== PlayerPosition.EAST && (
+                      <div className="flex items-center gap-1">
+                        {eastPlayer && !eastPlayer.isBot && eastPlayer.id !== roomState?.myClientId && (
+                          <button
+                            type="button"
+                            id="btn-transfer-host-east"
+                            onClick={() => {
+                              soundManager.play('click');
+                              sharedMultiplayerClient.transferHost(PlayerPosition.EAST);
+                            }}
+                            className="p-1 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-600/60 text-amber-300 cursor-pointer transition-colors"
+                            title="👑 Transfer Host Role to East"
+                          >
+                            <Crown className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleStartSeatRename(PlayerPosition.EAST, eastPlayer?.name || 'Friend 3')}
+                          className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                          title="Rename East"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* Match Length Selector (Host only) */}
+                {isHost && (
+                  <div className="pt-2 border-t border-stone-800/80 px-1">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-mono text-stone-400 uppercase tracking-wider font-semibold">
+                        Match Length
+                      </span>
+                      <span className="text-[11px] text-amber-400 font-bold font-mono">
+                        {totalRounds === 10 ? '10 Rounds' : '5 Rounds'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        id="btn-room-rounds-5"
+                        onClick={() => {
+                          soundManager.play('click');
+                          setTotalRounds(5);
+                        }}
+                        className={`py-1.5 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                          totalRounds === 5
+                            ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-300 shadow-sm ring-1 ring-emerald-500/40'
+                            : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:bg-stone-800/80 hover:text-stone-200'
+                        }`}
+                      >
+                        <span>5 Rounds (Standard)</span>
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-room-rounds-10"
+                        onClick={() => {
+                          soundManager.play('click');
+                          setTotalRounds(10);
+                        }}
+                        className={`py-1.5 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                          totalRounds === 10
+                            ? 'bg-amber-950/80 border-amber-500/80 text-amber-300 shadow-sm ring-1 ring-amber-500/40'
+                            : 'bg-stone-900/70 border-stone-800 text-stone-400 hover:bg-stone-800/80 hover:text-stone-200'
+                        }`}
+                      >
+                        <span>10 Rounds (Championship)</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Auto-fill Toggle (Host only) */}
                 {isHost && (
@@ -635,6 +959,22 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
           {activeTab === 'join' && !hasJoinedRoom && (
             <form onSubmit={handleJoinSubmit} className="space-y-4">
               <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-3">
+                {/* Player Name / Nickname Input for Joiner */}
+                <div className="space-y-1.5 pb-2 border-b border-stone-800">
+                  <label htmlFor="input-joiner-name" className="block text-xs font-semibold text-stone-300">
+                    Your Name / Nickname <span className="text-stone-500 font-normal">(Optional)</span>:
+                  </label>
+                  <input
+                    type="text"
+                    id="input-joiner-name"
+                    value={playerName}
+                    onChange={(e) => handlePlayerNameChange(e.target.value)}
+                    placeholder="e.g. Priya (defaults to Friend 1/2/3)"
+                    maxLength={18}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-700 text-white text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-500"
+                  />
+                </div>
+
                 <label htmlFor="input-room-code" className="block text-xs font-semibold text-stone-300">
                   Enter 6-Digit Room Code:
                 </label>
@@ -665,6 +1005,16 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     <span className="hidden xs:inline">Paste</span>
                   </button>
                 </div>
+
+                {pendingApprovalMsg && (
+                  <div
+                    id="join-pending-approval-banner"
+                    className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center gap-2.5 text-xs text-amber-300 font-medium"
+                  >
+                    <Loader2 className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+                    <span>{pendingApprovalMsg}</span>
+                  </div>
+                )}
 
                 {joinError && (
                   <p id="join-error-message" className="text-xs text-rose-400 font-semibold flex items-center gap-1.5">

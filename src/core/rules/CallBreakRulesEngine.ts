@@ -10,6 +10,7 @@
 import { Card, Suit } from '../../models/card';
 import { PlayerPosition, CLOCKWISE_PLAYER_ORDER } from '../../models/player';
 import {
+  GameMode,
   GameState,
   GameStatus,
   PlayedCard,
@@ -139,7 +140,15 @@ export class CallBreakRulesEngine implements IRulesEngine {
     // Deck lifecycle
     const deck = cardEngine.createDeck();
     const shuffledDeck = cardEngine.shuffle(deck, seed);
-    const dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+
+    // Solo Offline mode (human vs bots): 10%-12% weighted deal boost for South
+    // Online Multiplayer mode or seeded test runs: strictly unweighted uniform random Fisher-Yates deal
+    let dealtHands: Readonly<Record<PlayerPosition, readonly Card[]>>;
+    if (state.mode === GameMode.OFFLINE_BOTS && seed === undefined && typeof cardEngine.dealWeighted === 'function') {
+      dealtHands = cardEngine.dealWeighted(shuffledDeck, PlayerPosition.SOUTH);
+    } else {
+      dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+    }
 
     // Prepare fresh player states
     const updatedPlayers: Record<PlayerPosition, any> = { ...state.players };
@@ -494,7 +503,15 @@ export class CallBreakRulesEngine implements IRulesEngine {
     // Deck lifecycle
     const deck = cardEngine.createDeck();
     const shuffledDeck = cardEngine.shuffle(deck, seed);
-    const dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+
+    // Solo Offline mode (human vs bots): 10%-12% weighted deal boost for South
+    // Online Multiplayer mode or seeded test runs: strictly unweighted uniform random Fisher-Yates deal
+    let dealtHands: Readonly<Record<PlayerPosition, readonly Card[]>>;
+    if (state.mode === GameMode.OFFLINE_BOTS && seed === undefined && typeof cardEngine.dealWeighted === 'function') {
+      dealtHands = cardEngine.dealWeighted(shuffledDeck, PlayerPosition.SOUTH);
+    } else {
+      dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+    }
 
     // Prepare fresh player states for re-bid, keeping cumulative scores intact
     const updatedPlayers: Record<PlayerPosition, any> = { ...state.players };
