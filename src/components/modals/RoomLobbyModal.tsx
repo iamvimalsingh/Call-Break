@@ -102,20 +102,35 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     const unsubRoom = sharedMultiplayerClient.onRoomState((state) => {
       setRoomState(state);
       setRoomCode(state.roomCode);
+      if (activeTab === 'join' && isJoining) {
+        setIsJoining(false);
+        setHasJoinedRoom(true);
+        setJoinError(null);
+      }
     });
 
     const unsubGameStarted = sharedMultiplayerClient.onGameStarted((code) => {
       soundManager.play('deal');
       const latestRoom = sharedMultiplayerClient.getRoomState();
-      const isHostNow =
-        activeTab === 'create' ||
-        (latestRoom ? latestRoom.hostId === latestRoom.myClientId : true);
+      const isHostNow = latestRoom
+        ? latestRoom.hostId === latestRoom.myClientId ||
+          latestRoom.players.find((p) => p.id === latestRoom.myClientId)?.isHost === true
+        : activeTab === 'create';
       onStartRoomMatchRef.current(code, isHostNow, autoFillBotsRef.current);
     });
 
     const unsubError = sharedMultiplayerClient.onError((err) => {
-      setJoinError(err.message);
+      let msg = err.message || 'Failed to join room';
+      if (
+        err.code === 'ROOM_NOT_FOUND' ||
+        err.message?.toLowerCase().includes('not found') ||
+        err.message?.toLowerCase().includes('no active table')
+      ) {
+        msg = 'Table not found. Please check the 6-digit code.';
+      }
+      setJoinError(msg);
       setIsJoining(false);
+      setHasJoinedRoom(false);
       soundManager.play('warning');
     });
 
@@ -219,7 +234,6 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     setIsJoining(true);
     soundManager.play('deal');
     sharedMultiplayerClient.joinRoom(clean, 'Friend (You)');
-    setHasJoinedRoom(true);
   };
 
   const handleStartCreatedRoom = () => {
@@ -247,11 +261,10 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
   const totalConnected = roomState?.players.length ?? 1;
   const isHost =
-    activeTab === 'create' ||
-    (roomState
+    roomState
       ? roomState.hostId === roomState.myClientId ||
         roomState.players.find((p) => p.id === roomState.myClientId)?.isHost === true
-      : false);
+      : activeTab === 'create';
 
   return (
     <AnimatePresence>
@@ -654,7 +667,10 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 </div>
 
                 {joinError && (
-                  <p className="text-xs text-rose-400 font-medium">{joinError}</p>
+                  <p id="join-error-message" className="text-xs text-rose-400 font-semibold flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                    <span>{joinError}</span>
+                  </p>
                 )}
 
                 <p className="text-[11px] text-stone-400 font-sans">

@@ -10,6 +10,7 @@ import { GameMode, GameState, GameStatus, PlayedCard, CompletedTrick } from '../
 import { GameEvent } from '../../src/models/events';
 import { TurnTimerPayload } from '../../src/models/multiplayer';
 import { CardEngine } from '../../src/core/deck/CardEngine';
+import { sortHand } from '../../src/core/deck/cardUtils';
 import { CallBreakRulesEngine } from '../../src/core/rules/CallBreakRulesEngine';
 import { ScoringEngine } from '../../src/core/scoring/ScoringEngine';
 import { MediumBotStrategy } from '../../src/core/bot/MediumBotStrategy';
@@ -512,7 +513,7 @@ export class AuthoritativeGameController {
       const isClientSelf = rawPos === clientRawPos;
 
       const handForClient: readonly Card[] = isClientSelf
-        ? p.hand
+        ? sortHand(p.hand)
         : p.hand.map((_, i) => ({
             id: `masked_${p.id}_${i}`,
             suit: state.config.trumpSuit,

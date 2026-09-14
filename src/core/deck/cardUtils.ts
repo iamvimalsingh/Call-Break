@@ -18,6 +18,31 @@ export class CardValidationError extends Error {
  * Two cards with the same suit and rank have the exact same ID.
  * Example: "SPADES_A", "HEARTS_10", "CLUBS_2"
  */
+/**
+ * Standard Call Break hand sorting:
+ * 1. Suit priority: Spades (Trump) -> Hearts -> Diamonds -> Clubs
+ * 2. Within each suit: Rank descending (Ace = 14 down to 2)
+ */
+export function sortHand(hand: readonly Card[]): readonly Card[] {
+  if (!hand || !Array.isArray(hand)) {
+    return Object.freeze([]);
+  }
+  const suitPriority: Record<Suit, number> = {
+    [Suit.SPADES]: 0,
+    [Suit.HEARTS]: 1,
+    [Suit.DIAMONDS]: 2,
+    [Suit.CLUBS]: 3,
+  };
+  const sorted = [...hand].sort((a, b) => {
+    const suitDiff = suitPriority[a.suit] - suitPriority[b.suit];
+    if (suitDiff !== 0) {
+      return suitDiff;
+    }
+    return b.value - a.value;
+  });
+  return Object.freeze(sorted);
+}
+
 export function getCardId(suit: Suit, rank: Rank): string {
   return `${suit}_${rank}`;
 }

@@ -85,7 +85,7 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
               const errMsg: ServerMessage = {
                 type: 'ERROR',
                 payload: {
-                  code: 'JOIN_FAILED',
+                  code: result.errorCode || 'JOIN_FAILED',
                   message: result.error || 'Failed to join room.',
                 },
               };

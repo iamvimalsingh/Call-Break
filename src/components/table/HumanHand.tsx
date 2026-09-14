@@ -6,7 +6,7 @@
  * Phase 8 Animations & Sound
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card } from '../../models/card';
 import { CardView } from './CardView';
@@ -14,6 +14,7 @@ import { Sparkles, AlertCircle } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions, dealConfig } from '../../core/animation/animationConfig';
+import { sortHand } from '../../core/deck/cardUtils';
 
 export interface HumanHandProps {
   cards: readonly Card[];
@@ -41,6 +42,9 @@ export const HumanHand: React.FC<HumanHandProps> = ({
   const [containerWidth, setContainerWidth] = useState<number>(() =>
     typeof window !== 'undefined' ? window.innerWidth : 400
   );
+
+  // Auto-sort hand cards for all players (Spades trump first, then Hearts, Diamonds, Clubs; rank descending)
+  const sortedCards = useMemo(() => sortHand(cards), [cards]);
 
   // Measure container width responsively to calculate exact pixel card overlap
   useEffect(() => {
@@ -109,7 +113,7 @@ export const HumanHand: React.FC<HumanHandProps> = ({
     onPlayCard(card);
   };
 
-  if (cards.length === 0) {
+  if (sortedCards.length === 0) {
     return (
       <div className="w-full py-2 sm:py-4 text-center text-xs font-mono text-stone-500">
         No cards remaining in hand.
@@ -118,7 +122,7 @@ export const HumanHand: React.FC<HumanHandProps> = ({
   }
 
   // Calculate dynamic card overlap based on available container width & remaining cards
-  const n = cards.length;
+  const n = sortedCards.length;
   const isMobile = containerWidth < 768;
   const isSmallScreen = containerWidth < 640;
   const isTablet = containerWidth >= 640 && containerWidth < 1024;
@@ -135,9 +139,9 @@ export const HumanHand: React.FC<HumanHandProps> = ({
       ? 68
       : 74;
 
-  // Horizontal breathing room on mobile to ensure fanned edge cards never get cut off by screen boundaries
-  const sideSafety = isMobile ? (n > 8 ? 24 : 16) : (isSmallScreen ? 14 : 20);
-  const availWidth = Math.max(260, containerWidth - sideSafety * 2);
+  // Horizontal breathing room on mobile to ensure fanned edge cards utilize maximum available screen width
+  const sideSafety = isMobile ? 6 : (isSmallScreen ? 10 : 16);
+  const availWidth = Math.max(300, containerWidth - sideSafety * 2);
 
   // Minimum exposed width on the left of each card so the rank number (especially "10", "Q", "K", "A") and suit are 100% visible
   const minVisibleStep = isMobile ? (containerWidth < 380 ? 21 : 23) : 24;
@@ -199,11 +203,11 @@ export const HumanHand: React.FC<HumanHandProps> = ({
       <div
         id="zone-hand"
         ref={containerRef}
-        className="w-full max-w-4xl px-0.5 sm:px-2 pt-6 pb-2 flex justify-center items-end overflow-visible"
+        className="w-full max-w-4xl px-0.5 sm:px-1.5 pt-4 pb-1.5 flex justify-center items-end overflow-visible"
       >
         <div className="flex items-end justify-center py-0.5 overflow-visible">
           <AnimatePresence mode="popLayout">
-            {cards.map((card, index) => {
+            {sortedCards.map((card, index) => {
               const isLegal = isTurn && !isBidding && legalMoves.some((legal) => legal.id === card.id);
               const isSelected = selectedCard ? selectedCard.id === card.id : false;
 

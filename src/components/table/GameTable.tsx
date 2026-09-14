@@ -69,6 +69,26 @@ export const GameTable: React.FC<GameTableProps> = ({
 
   const isBiddingPhase = state.status === GameStatus.BIDDING;
 
+  const leaderScoreText = React.useMemo(() => {
+    const scores = state.cumulativeScores;
+    const entries = (Object.keys(scores) as PlayerPosition[]).map((pos) => ({
+      pos,
+      name: playerNames[pos] ?? pos,
+      score: scores[pos] ?? 0,
+    }));
+    entries.sort((a, b) => b.score - a.score);
+    if (entries.length === 0) return '';
+    const top = entries[0];
+    const second = entries[1];
+    if (second && top.score === second.score && top.score === 0) {
+      return '';
+    }
+    if (second && top.score === second.score) {
+      return `Tied: ${top.name} (${top.score > 0 ? '+' : ''}${top.score.toFixed(1)})`;
+    }
+    return `Leader: ${top.name} (${top.score > 0 ? '+' : ''}${top.score.toFixed(1)})`;
+  }, [state.cumulativeScores, playerNames]);
+
   return (
     <div
       id="callbreak-game-table-container"
@@ -97,9 +117,9 @@ export const GameTable: React.FC<GameTableProps> = ({
           />
         </div>
 
-        {/* 2. Middle Zone (West Player, Center Trick Arena, East Player) */}
+        {/* 2. Middle Zone (West Player, Center Trick Arena / Bidding Center, East Player) */}
         <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-6 md:px-10 lg:px-14 my-0 xs:my-0.5 sm:my-1">
-          {/* West Player (Bot) */}
+          {/* West Player */}
           <div className="w-auto flex justify-start shrink-0">
             <PlayerSlot
               player={westPlayer}
@@ -109,16 +129,54 @@ export const GameTable: React.FC<GameTableProps> = ({
             />
           </div>
 
-          {/* Center Trick Arena */}
-          <CenterPlayArea
-            currentTrick={state.currentTrick}
-            lastCompletedTrick={lastCompletedTrick}
-            actionMessage={state.lastActionMessage}
-            playerNames={playerNames}
-            isBidding={isBiddingPhase}
-          />
+          {/* Center Arena: Bidding Modal in Center Felt OR Trick Circle */}
+          <div className="flex-1 flex items-center justify-center min-w-0 px-1 sm:px-2 relative">
+            <AnimatePresence mode="wait">
+              {isBiddingPhase ? (
+                <motion.div
+                  key="center-bidding-controls"
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                  transition={transitions.springFast}
+                  className="w-full max-w-md mx-auto flex flex-col items-center"
+                >
+                  <BiddingControls
+                    currentBidder={state.currentPlayer}
+                    isHumanTurn={state.currentPlayer === PlayerPosition.SOUTH}
+                    humanPlayer={southPlayer}
+                    minBid={state.config.minBid}
+                    maxBid={state.config.maxBid}
+                    onSubmitBid={onSubmitBid}
+                    expectedBidderName={playerNames[state.currentPlayer]}
+                    ruleCoachEnabled={ruleCoachEnabled}
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="center-play-area-wrapper"
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={transitions.springFast}
+                  className="w-full flex items-center justify-center"
+                >
+                  <CenterPlayArea
+                    currentTrick={state.currentTrick}
+                    lastCompletedTrick={lastCompletedTrick}
+                    actionMessage={state.lastActionMessage}
+                    playerNames={playerNames}
+                    isBidding={isBiddingPhase}
+                    currentRound={state.currentRound}
+                    totalRounds={state.config.totalRounds}
+                    leaderScoreText={leaderScoreText}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-          {/* East Player (Bot) */}
+          {/* East Player */}
           <div className="w-auto flex justify-end shrink-0">
             <PlayerSlot
               player={eastPlayer}
@@ -129,33 +187,8 @@ export const GameTable: React.FC<GameTableProps> = ({
           </div>
         </div>
 
-        {/* 3. South / Bidding Zone & 4. Human Hand Zone */}
+        {/* 3. South Zone: Player Badge & 13-Card Hand Tray */}
         <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-auto overflow-visible">
-          {/* Bidding Controls (when bidding phase is active) */}
-          <AnimatePresence mode="wait">
-            {isBiddingPhase && (
-              <motion.div
-                key="bidding-controls-wrapper"
-                initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 12 }}
-                transition={transitions.springFast}
-                className="w-full max-w-lg mb-0.5 xs:mb-1 sm:mb-1.5 px-0.5 xs:px-1"
-              >
-                <BiddingControls
-                  currentBidder={state.currentPlayer}
-                  isHumanTurn={state.currentPlayer === PlayerPosition.SOUTH}
-                  humanPlayer={southPlayer}
-                  minBid={state.config.minBid}
-                  maxBid={state.config.maxBid}
-                  onSubmitBid={onSubmitBid}
-                  expectedBidderName={playerNames[state.currentPlayer]}
-                  ruleCoachEnabled={ruleCoachEnabled}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* South Player Header Badge */}
           <div className="mb-0.5 sm:mb-1 shrink-0">
             <PlayerSlot

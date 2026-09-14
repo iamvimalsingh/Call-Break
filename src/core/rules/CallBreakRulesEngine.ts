@@ -146,8 +146,8 @@ export class CallBreakRulesEngine implements IRulesEngine {
 
     for (const pos of CLOCKWISE_PLAYER_ORDER) {
       const rawHand = dealtHands[pos] ?? [];
-      // South (human) hand sorted for clarity; other hands kept in dealt order
-      const hand = pos === PlayerPosition.SOUTH ? cardEngine.sortHand(rawHand) : rawHand;
+      // All player hands sorted according to standard Call Break rules (Spades -> Hearts -> Diamonds -> Clubs, rank descending)
+      const hand = cardEngine.sortHand(rawHand);
 
       updatedPlayers[pos] = {
         ...state.players[pos],
