@@ -19,6 +19,8 @@ import { BiddingControls } from './BiddingControls';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
+import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
+import { Copy, Check, Users } from 'lucide-react';
 
 export interface GameTableProps {
   state: GameState;
@@ -43,6 +45,31 @@ export const GameTable: React.FC<GameTableProps> = ({
   const eastPlayer = state.players[PlayerPosition.EAST];
   const prefersReducedMotion = useReducedMotion();
   const lastDealtRoundRef = useRef<number>(0);
+  const [copiedRoomCode, setCopiedRoomCode] = React.useState(false);
+  const [roomCode, setRoomCode] = React.useState<string | null>(() => {
+    const r = sharedMultiplayerClient.getRoomState();
+    return r ? r.roomCode : null;
+  });
+
+  useEffect(() => {
+    const unsubRoom = sharedMultiplayerClient.onRoomState((r) => {
+      setRoomCode(r ? r.roomCode : null);
+    });
+    return () => {
+      unsubRoom();
+    };
+  }, []);
+
+  const handleCopyCode = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!roomCode) return;
+    soundManager.play('click');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(roomCode).catch(() => {});
+    }
+    setCopiedRoomCode(true);
+    setTimeout(() => setCopiedRoomCode(false), 2000);
+  };
 
   // Trigger dealing sound effect when a round begins
   useEffect(() => {
@@ -120,6 +147,18 @@ export const GameTable: React.FC<GameTableProps> = ({
     ? lastCompletedTrick.trickNumber
     : state.currentTrick.trickNumber;
 
+  const totalBids = React.useMemo(() => {
+    const players = [
+      state.players[PlayerPosition.SOUTH],
+      state.players[PlayerPosition.WEST],
+      state.players[PlayerPosition.NORTH],
+      state.players[PlayerPosition.EAST],
+    ];
+    const allBidded = players.every((p) => p && p.currentBid !== null && p.currentBid >= 1);
+    if (!allBidded && state.status !== GameStatus.PLAYING) return null;
+    return players.reduce((sum, p) => sum + (p?.currentBid ?? 0), 0);
+  }, [state.players, state.status]);
+
   const leaderScoreText = React.useMemo(() => {
     const scores = state.cumulativeScores;
     const entries = (Object.keys(scores) as PlayerPosition[]).map((pos) => ({
@@ -141,6 +180,30 @@ export const GameTable: React.FC<GameTableProps> = ({
     return `Leader: ${top.name} (${scoreFormatted})`;
   }, [state.cumulativeScores, playerNames]);
 
+  const turnInstruction = React.useMemo(() => {
+    if (state.status === GameStatus.BIDDING) {
+      if (state.currentPlayer === PlayerPosition.SOUTH) {
+        return { text: 'Your Turn — Select your bid', isHuman: true, icon: '🎯' };
+      }
+      const bidderName = playerNames[state.currentPlayer] || 'Opponent';
+      return { text: `${bidderName} is bidding...`, isHuman: false, icon: '⏳' };
+    }
+    if (state.status === GameStatus.PLAYING) {
+      if (state.currentPlayer === PlayerPosition.SOUTH) {
+        return { text: 'Your Turn — Select a card to play', isHuman: true, icon: '🎯' };
+      }
+      const turnName = playerNames[state.currentPlayer] || 'Opponent';
+      return { text: `${turnName}'s turn`, isHuman: false, icon: '⏳' };
+    }
+    if (state.status === GameStatus.ROUND_ENDED) {
+      return { text: 'Round Complete', isHuman: false, icon: '🏁' };
+    }
+    if (state.status === GameStatus.MATCH_FINISHED) {
+      return { text: 'Match Complete', isHuman: false, icon: '🏆' };
+    }
+    return null;
+  }, [state.status, state.currentPlayer, playerNames]);
+
   return (
     <div
       id="callbreak-game-table-container"
@@ -160,154 +223,250 @@ export const GameTable: React.FC<GameTableProps> = ({
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/15 via-emerald-950/20 to-black/60 pointer-events-none rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem]" />
 
         {/* ==================================================================== */}
-        {/* 4-CORNER TABLE HUD ARCHITECTURE                                      */}
+        {/* 1. DEDICATED DESKTOP HUD OVERLAY LAYER (4 FIXED CORNER SLOTS)        */}
         {/* ==================================================================== */}
-
-        {/* Corner 1 (Top-Left): Match & Trick Progress */}
         <div
-          id="badge-round-trick"
-          className="absolute top-2 left-3 sm:top-3 sm:left-4 z-30 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-emerald-500/40 text-emerald-300 shadow-lg text-[10px] sm:text-xs font-mono font-bold tracking-tight pointer-events-none"
+          id="desktop-hud-overlay"
+          className="absolute inset-0 pointer-events-none z-30 overflow-hidden"
+          aria-label="Table HUD Overlay"
         >
-          <span className="text-emerald-400 text-xs sm:text-sm">📍</span>
-          <span>Round {state.currentRound}/{state.config.totalRounds}</span>
-          <span className="text-stone-500 font-normal">•</span>
-          <span>Trick {trickNumber}/13</span>
-        </div>
-
-        {/* Corner 2 (Top-Right): Leaderboard Telemetry */}
-        {leaderScoreText && (
+          {/* Corner 1: Top-Left (Match & Trick Progress) */}
           <div
-            id="badge-score-leader"
-            className="absolute top-2 right-3 sm:top-3 sm:right-4 z-30 flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-amber-500/40 text-stone-200 shadow-lg text-[10px] sm:text-xs font-medium pointer-events-none"
+            id="hud-zone-top-left"
+            className="absolute top-2.5 left-3 sm:top-3.5 sm:left-4 md:top-4 md:left-5 lg:top-5 lg:left-6 pointer-events-auto"
           >
-            <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
-            <span className="truncate max-w-[130px] xs:max-w-[170px] sm:max-w-[220px] font-semibold">{leaderScoreText}</span>
-          </div>
-        )}
-
-        {/* Corner 3 (Bottom-Left): Live Action Instructions */}
-        <AnimatePresence>
-          {state.lastActionMessage && (
-            <motion.div
-              key={state.lastActionMessage}
-              id="trick-action-message"
-              initial={prefersReducedMotion ? false : { opacity: 0, x: -10, y: 4 }}
-              animate={{ opacity: 1, x: 0, y: 0 }}
-              exit={{ opacity: 0, x: -6, y: 2 }}
-              transition={transitions.springFast}
-              className="absolute bottom-20 xs:bottom-22 sm:bottom-24 left-3 sm:left-4 z-30 flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl bg-stone-950/90 backdrop-blur-sm border border-stone-700/80 text-[9px] xs:text-[10px] sm:text-xs text-stone-200 shadow-xl max-w-[220px] xs:max-w-[260px] sm:max-w-[320px] pointer-events-none"
+            <div
+              id="badge-round-trick"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-emerald-500/40 text-emerald-300 shadow-lg text-[10px] sm:text-xs font-mono font-bold tracking-tight"
             >
-              <span className="text-amber-400 text-xs shrink-0">💬</span>
-              <span className="truncate font-mono">{state.lastActionMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ==================================================================== */}
-        {/* CROSS (+) SEATING LAYOUT & CENTER TRICK RESOLUTION AREA              */}
-        {/* ==================================================================== */}
-
-        {/* 1. North Player Zone */}
-        <div id="zone-north-player" className="w-full flex justify-center z-10 pt-1 sm:pt-2 shrink-0">
-          <PlayerSlot
-            player={northPlayer}
-            position={PlayerPosition.NORTH}
-            isCurrentTurn={state.currentPlayer === PlayerPosition.NORTH}
-            timer={turnTimer && turnTimer.position === PlayerPosition.NORTH ? turnTimer : null}
-          />
-        </div>
-
-        {/* 2. Middle Zone (West Player, Center Trick Arena / Bidding Center, East Player) */}
-        <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-4 md:px-8 lg:px-12 my-0 xs:my-0.5 sm:my-1">
-          {/* West Player */}
-          <div className="w-auto flex justify-start shrink-0">
-            <PlayerSlot
-              player={westPlayer}
-              position={PlayerPosition.WEST}
-              isCurrentTurn={state.currentPlayer === PlayerPosition.WEST}
-              timer={turnTimer && turnTimer.position === PlayerPosition.WEST ? turnTimer : null}
-            />
+              <span className="text-emerald-400 text-xs sm:text-sm">📍</span>
+              <span>Round {state.currentRound}/{state.config.totalRounds}</span>
+              <span className="text-stone-500 font-normal">•</span>
+              <span>Trick {trickNumber}/13</span>
+            </div>
           </div>
 
-          {/* Center Arena: Bidding Modal in Center Felt OR Trick Circle */}
-          <div className="flex-1 flex items-center justify-center min-w-0 px-1 sm:px-2 relative">
-            <AnimatePresence mode="wait">
-              {isBiddingPhase ? (
+          {/* Corner 2: Top-Right (Leaderboard & Telemetry: Leader + Total Bids) */}
+          <div
+            id="hud-zone-top-right"
+            className="absolute top-2.5 right-3 sm:top-3.5 sm:right-4 md:top-4 md:right-5 lg:top-5 lg:right-6 pointer-events-auto"
+          >
+            {leaderScoreText && (
+              <div
+                id="badge-score-leader"
+                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-amber-500/40 text-stone-200 shadow-lg text-[10px] sm:text-xs font-medium"
+              >
+                <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
+                <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-[220px] font-semibold">
+                  {leaderScoreText}
+                </span>
+                {totalBids !== null && (
+                  <>
+                    <span className="text-stone-500 font-normal hidden xs:inline">•</span>
+                    <span className="text-amber-300/90 font-mono text-[9.5px] sm:text-xs hidden xs:inline whitespace-nowrap">
+                      Bids: <strong className="text-amber-300 font-bold">{totalBids}</strong>/13
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Corner 3: Bottom-Left (Last Action / Live Game Event) */}
+          <div
+            id="hud-zone-bottom-left"
+            className="absolute bottom-20 xs:bottom-22 sm:bottom-24 md:bottom-28 lg:bottom-32 left-3 sm:left-4 md:left-5 lg:left-6 pointer-events-auto max-w-[180px] xs:max-w-[220px] sm:max-w-[260px] md:max-w-[300px]"
+          >
+            <AnimatePresence>
+              {state.lastActionMessage && (
                 <motion.div
-                  key="center-bidding-controls"
-                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94, y: 8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                  key={state.lastActionMessage}
+                  id="trick-action-message"
+                  initial={prefersReducedMotion ? false : { opacity: 0, x: -10, y: 4 }}
+                  animate={{ opacity: 1, x: 0, y: 0 }}
+                  exit={{ opacity: 0, x: -6, y: 2 }}
                   transition={transitions.springFast}
-                  className="w-full max-w-md mx-auto flex flex-col items-center"
+                  className="flex items-center gap-1.5 px-3 py-1 sm:py-1.5 rounded-xl bg-stone-950/90 backdrop-blur-sm border border-stone-700/80 text-[9px] xs:text-[10px] sm:text-xs text-stone-200 shadow-xl"
                 >
-                  <BiddingControls
-                    currentBidder={state.currentPlayer}
-                    isHumanTurn={state.currentPlayer === PlayerPosition.SOUTH}
-                    humanPlayer={southPlayer}
-                    minBid={state.config.minBid}
-                    maxBid={state.config.maxBid}
-                    onSubmitBid={onSubmitBid}
-                    expectedBidderName={playerNames[state.currentPlayer]}
-                    ruleCoachEnabled={ruleCoachEnabled}
-                  />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="center-play-area-wrapper"
-                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={transitions.springFast}
-                  className="w-full flex items-center justify-center"
-                >
-                  <CenterPlayArea
-                    currentTrick={state.currentTrick}
-                    lastCompletedTrick={lastCompletedTrick}
-                    actionMessage={state.lastActionMessage}
-                    playerNames={playerNames}
-                    isBidding={isBiddingPhase}
-                    currentRound={state.currentRound}
-                    totalRounds={state.config.totalRounds}
-                    leaderScoreText={leaderScoreText}
-                  />
+                  <span className="text-amber-400 text-xs shrink-0">💬</span>
+                  <span className="truncate font-mono">{state.lastActionMessage}</span>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
 
-          {/* East Player */}
-          <div className="w-auto flex justify-end shrink-0">
-            <PlayerSlot
-              player={eastPlayer}
-              position={PlayerPosition.EAST}
-              isCurrentTurn={state.currentPlayer === PlayerPosition.EAST}
-              timer={turnTimer && turnTimer.position === PlayerPosition.EAST ? turnTimer : null}
-            />
+          {/* Corner 4: Bottom-Right (Current Action / Turn Instruction & Room Status) */}
+          <div
+            id="hud-zone-bottom-right"
+            className="absolute bottom-20 xs:bottom-22 sm:bottom-24 md:bottom-28 lg:bottom-32 right-3 sm:right-4 md:right-5 lg:right-6 pointer-events-auto flex flex-col items-end gap-1.5 max-w-[220px] xs:max-w-[260px] sm:max-w-[300px] md:max-w-[340px]"
+          >
+            {/* Turn Instruction HUD */}
+            <AnimatePresence mode="wait">
+              {turnInstruction && (
+                <motion.div
+                  key={turnInstruction.text}
+                  id="badge-turn-instruction"
+                  initial={prefersReducedMotion ? false : { opacity: 0, x: 10, y: 4 }}
+                  animate={{ opacity: 1, x: 0, y: 0 }}
+                  exit={{ opacity: 0, x: 6, y: 2 }}
+                  transition={transitions.springFast}
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-xl backdrop-blur-sm shadow-xl text-[9px] xs:text-[10px] sm:text-xs font-semibold whitespace-nowrap ${
+                    turnInstruction.isHuman
+                      ? 'bg-emerald-950/90 border border-emerald-500/60 text-emerald-200 ring-1 ring-emerald-400/30'
+                      : 'bg-stone-950/90 border border-stone-700/80 text-stone-300'
+                  }`}
+                >
+                  <span className="text-xs shrink-0">{turnInstruction.icon}</span>
+                  <span className="truncate">{turnInstruction.text}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Multiplayer Room Code Badge */}
+            <AnimatePresence>
+              {(roomCode || state.mode === GameMode.ONLINE_MULTIPLAYER) && (
+                <motion.div
+                  id="badge-room-status"
+                  initial={prefersReducedMotion ? false : { opacity: 0, x: 10, y: 4 }}
+                  animate={{ opacity: 1, x: 0, y: 0 }}
+                  exit={{ opacity: 0, x: 6, y: 2 }}
+                  transition={transitions.springFast}
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1 rounded-xl bg-stone-950/90 backdrop-blur-sm border border-emerald-500/40 text-[9px] xs:text-[10px] sm:text-xs text-emerald-300 shadow-xl pointer-events-auto"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                  <Users className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="font-mono font-bold tracking-tight">
+                    {roomCode ? `Room ${roomCode}` : 'Live Match'}
+                  </span>
+                  {roomCode && (
+                    <button
+                      type="button"
+                      onClick={handleCopyCode}
+                      className="ml-0.5 p-0.5 hover:bg-emerald-950/80 rounded text-emerald-300 hover:text-emerald-100 transition-colors cursor-pointer"
+                      title="Copy room code"
+                    >
+                      {copiedRoomCode ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
 
-        {/* 3. South Zone: Player Badge & 13-Card Hand Tray */}
-        <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-3 sm:mt-4 overflow-visible">
-          {/* South Player Header Badge */}
-          <div className="mb-0.5 sm:mb-1 shrink-0">
+        {/* ==================================================================== */}
+        {/* 2. GAMEPLAY & PLAYER SEATS LAYER (CROSS + LAYOUT)                   */}
+        {/* ==================================================================== */}
+        <div
+          id="gameplay-seats-layer"
+          className="relative w-full h-full flex flex-col items-center justify-between z-10 min-h-0"
+        >
+          {/* 1. North Player Zone */}
+          <div id="zone-north-player" className="w-full flex justify-center z-10 pt-1 sm:pt-2 shrink-0">
             <PlayerSlot
-              player={southPlayer}
-              position={PlayerPosition.SOUTH}
-              isCurrentTurn={state.currentPlayer === PlayerPosition.SOUTH}
-              timer={turnTimer && turnTimer.position === PlayerPosition.SOUTH ? turnTimer : null}
+              player={northPlayer}
+              position={PlayerPosition.NORTH}
+              isCurrentTurn={state.currentPlayer === PlayerPosition.NORTH}
+              timer={turnTimer && turnTimer.position === PlayerPosition.NORTH ? turnTimer : null}
             />
           </div>
 
-          {/* Human Hand Zone - 13 cards rendered crisply */}
-          <HumanHand
-            cards={southPlayer.hand}
-            legalMoves={legalMoves}
-            isTurn={state.status === GameStatus.PLAYING && state.currentPlayer === PlayerPosition.SOUTH}
-            isBidding={isBiddingPhase}
-            onPlayCard={onPlayCard}
-            ruleCoachEnabled={ruleCoachEnabled}
-          />
+          {/* 2. Middle Zone (West Player, Center Trick Arena / Bidding Center, East Player) */}
+          <div id="zone-middle-play" className="w-full flex-1 min-h-0 flex items-center justify-between z-10 px-0.5 xs:px-1.5 sm:px-4 md:px-8 lg:px-12 my-0 xs:my-0.5 sm:my-1">
+            {/* West Player */}
+            <div className="w-auto flex justify-start shrink-0">
+              <PlayerSlot
+                player={westPlayer}
+                position={PlayerPosition.WEST}
+                isCurrentTurn={state.currentPlayer === PlayerPosition.WEST}
+                timer={turnTimer && turnTimer.position === PlayerPosition.WEST ? turnTimer : null}
+              />
+            </div>
+
+            {/* Center Arena: Bidding Modal in Center Felt OR Trick Circle */}
+            <div className="flex-1 flex items-center justify-center min-w-0 px-1 sm:px-2 relative">
+              <AnimatePresence mode="wait">
+                {isBiddingPhase ? (
+                  <motion.div
+                    key="center-bidding-controls"
+                    initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.94, y: 8 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                    transition={transitions.springFast}
+                    className="w-full max-w-md mx-auto flex flex-col items-center"
+                  >
+                    <BiddingControls
+                      currentBidder={state.currentPlayer}
+                      isHumanTurn={state.currentPlayer === PlayerPosition.SOUTH}
+                      humanPlayer={southPlayer}
+                      minBid={state.config.minBid}
+                      maxBid={state.config.maxBid}
+                      onSubmitBid={onSubmitBid}
+                      expectedBidderName={playerNames[state.currentPlayer]}
+                      ruleCoachEnabled={ruleCoachEnabled}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="center-play-area-wrapper"
+                    initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={transitions.springFast}
+                    className="w-full flex items-center justify-center"
+                  >
+                    <CenterPlayArea
+                      currentTrick={state.currentTrick}
+                      lastCompletedTrick={lastCompletedTrick}
+                      actionMessage={state.lastActionMessage}
+                      playerNames={playerNames}
+                      isBidding={isBiddingPhase}
+                      currentRound={state.currentRound}
+                      totalRounds={state.config.totalRounds}
+                      leaderScoreText={leaderScoreText}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* East Player */}
+            <div className="w-auto flex justify-end shrink-0">
+              <PlayerSlot
+                player={eastPlayer}
+                position={PlayerPosition.EAST}
+                isCurrentTurn={state.currentPlayer === PlayerPosition.EAST}
+                timer={turnTimer && turnTimer.position === PlayerPosition.EAST ? turnTimer : null}
+              />
+            </div>
+          </div>
+
+          {/* 3. South Zone: Player Badge & 13-Card Hand Tray */}
+          <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-2 sm:mt-4 md:mt-5 overflow-visible">
+            {/* South Player Header Badge */}
+            <div className="mb-0.5 sm:mb-1 shrink-0">
+              <PlayerSlot
+                player={southPlayer}
+                position={PlayerPosition.SOUTH}
+                isCurrentTurn={state.currentPlayer === PlayerPosition.SOUTH}
+                timer={turnTimer && turnTimer.position === PlayerPosition.SOUTH ? turnTimer : null}
+              />
+            </div>
+
+            {/* Human Hand Zone - 13 cards rendered crisply */}
+            <HumanHand
+              cards={southPlayer.hand}
+              legalMoves={legalMoves}
+              isTurn={state.status === GameStatus.PLAYING && state.currentPlayer === PlayerPosition.SOUTH}
+              isBidding={isBiddingPhase}
+              onPlayCard={onPlayCard}
+              ruleCoachEnabled={ruleCoachEnabled}
+            />
+          </div>
         </div>
       </motion.div>
     </div>

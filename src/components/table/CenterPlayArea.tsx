@@ -290,17 +290,17 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
           </div>
         </div>
 
-        {/* Trick Winner Toast (Elevated Center-Bottom at z-40) */}
+        {/* Trick Winner Toast (Elevated Center-Bottom at z-40 in dedicated winner band) */}
         <AnimatePresence mode="wait">
           {isShowingCompleted && winnerPos && (
             <motion.div
               key={`winner-toast-${trickNumber}-${winnerPos}`}
               id="trick-winner-toast"
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 8, scale: 0.92 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6, scale: 0.92 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.95 }}
               transition={transitions.springFast}
-              className="absolute -bottom-6 sm:-bottom-7 md:-bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap px-3.5 sm:px-5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-stone-950 via-[#1c1404] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_25px_rgba(0,0,0,0.9),0_0_25px_rgba(251,191,36,0.45)] text-xs sm:text-sm font-bold flex items-center gap-1.5 ring-2 ring-amber-400/40 z-40 tracking-wide pointer-events-none"
+              className="absolute -bottom-4 xs:-bottom-5 sm:-bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-3.5 sm:px-5 py-1 sm:py-1.5 rounded-full bg-gradient-to-r from-stone-950 via-[#1c1404] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_25px_rgba(0,0,0,0.9),0_0_25px_rgba(251,191,36,0.45)] text-xs sm:text-sm font-bold flex items-center gap-1.5 ring-2 ring-amber-400/40 z-40 tracking-wide pointer-events-none"
             >
               <span className="text-amber-400 text-sm sm:text-base">🏆</span>
               <span>

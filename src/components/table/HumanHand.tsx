@@ -161,43 +161,23 @@ export const HumanHand: React.FC<HumanHandProps> = ({
   const maxRotation = 13;
 
   return (
-    <div className="w-full flex flex-col items-center select-none overflow-visible">
-      {/* Hand Status & Feedback Banner (Hidden during bidding unless illegal move clicked) */}
-      {(!isBidding || illegalAttemptMessage) && (
-        <div className="h-5 sm:h-6 flex items-center justify-center mb-0.5 text-center">
-          <AnimatePresence mode="wait">
-            {illegalAttemptMessage ? (
-              <motion.span
-                key="illegal-msg"
-                initial={prefersReducedMotion ? false : { opacity: 0, y: -6, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={transitions.springFast}
-                className="flex items-center gap-1 text-[10px] xs:text-[11px] sm:text-xs text-rose-200 font-medium bg-rose-950/95 border border-rose-600/80 px-2.5 sm:px-3.5 py-0.5 rounded-full shadow-lg shadow-rose-950/50 backdrop-blur-xs max-w-[90vw] truncate"
-              >
-                <AlertCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-400 shrink-0" />
-                <span className="truncate">{illegalAttemptMessage}</span>
-              </motion.span>
-            ) : isTurn ? (
-              <motion.span
-                key="turn-msg"
-                initial={prefersReducedMotion ? false : { opacity: 0, y: -4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={transitions.springFast}
-                className="flex items-center gap-1 text-[10px] xs:text-[11px] sm:text-xs text-emerald-200 font-semibold bg-emerald-950/95 border border-emerald-500/70 px-3 sm:px-4 py-0.5 rounded-full shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-400/40 backdrop-blur-xs max-w-[90vw] truncate"
-              >
-                <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400 animate-spin shrink-0" />
-                <span className="truncate">Your Turn — Select a card to play</span>
-              </motion.span>
-            ) : statusMessage ? (
-              <span key="status-msg" className="text-[10px] sm:text-[11px] text-stone-400 font-mono truncate max-w-[90vw]">
-                {statusMessage}
-              </span>
-            ) : null}
-          </AnimatePresence>
-        </div>
-      )}
+    <div className="w-full flex flex-col items-center select-none overflow-visible relative">
+      {/* Temporary Illegal Attempt Alert Overlay (Zero layout shift, appears above cards when needed) */}
+      <AnimatePresence>
+        {illegalAttemptMessage && (
+          <motion.div
+            key="illegal-msg"
+            initial={prefersReducedMotion ? false : { opacity: 0, y: -6, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.95 }}
+            transition={transitions.springFast}
+            className="absolute -top-7 sm:-top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 text-[10px] xs:text-[11px] sm:text-xs text-rose-200 font-semibold bg-rose-950/95 border border-rose-500/80 px-3 sm:px-4 py-1 rounded-full shadow-2xl shadow-black ring-1 ring-rose-500/50 backdrop-blur-md whitespace-nowrap pointer-events-none"
+          >
+            <AlertCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-rose-400 shrink-0" />
+            <span>{illegalAttemptMessage}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Responsive Hand Container with Exact Card Sizing & Zero Overflow */}
       <div
