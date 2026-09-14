@@ -147,6 +147,29 @@ export const GameTable: React.FC<GameTableProps> = ({
     ? lastCompletedTrick.trickNumber
     : state.currentTrick.trickNumber;
 
+  const winnerPos = isShowingCompleted && lastCompletedTrick ? lastCompletedTrick.winner : null;
+
+  const winnerToastText = React.useMemo(() => {
+    if (!isShowingCompleted || !winnerPos || !lastCompletedTrick) return null;
+    const winnerName = playerNames[winnerPos] || winnerPos;
+    if (winnerPos === PlayerPosition.SOUTH) {
+      return `You won Trick ${lastCompletedTrick.trickNumber}!`;
+    }
+    return `${winnerName} won Trick ${lastCompletedTrick.trickNumber}!`;
+  }, [isShowingCompleted, winnerPos, lastCompletedTrick, playerNames]);
+
+  const shouldShowLastActionMessage = React.useMemo(() => {
+    if (!state.lastActionMessage) return false;
+    if (
+      winnerToastText &&
+      (state.lastActionMessage.toLowerCase().includes('won trick') ||
+        state.lastActionMessage.toLowerCase().includes('wins trick'))
+    ) {
+      return false;
+    }
+    return true;
+  }, [state.lastActionMessage, winnerToastText]);
+
   const totalBids = React.useMemo(() => {
     const players = [
       state.players[PlayerPosition.SOUTH],
@@ -215,7 +238,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={transitions.springSmooth}
-        className="relative w-full max-w-5xl h-full flex flex-col items-center rounded-2xl sm:rounded-[2.5rem] md:rounded-[3rem] bg-gradient-to-b from-[#062418]/95 via-[#041a11]/95 to-[#020e09]/98 border sm:border-4 md:border-[6px] border-[#1f382a] ring-1 ring-emerald-400/30 ring-offset-1 sm:ring-offset-4 ring-offset-stone-950 shadow-[0_20px_70px_rgba(0,0,0,0.85)] p-0.5 sm:p-2 md:p-3 min-h-0 overflow-hidden"
+        className="relative w-full h-full sm:max-w-[94%] md:max-w-[92%] lg:max-w-[93%] xl:max-w-4xl sm:max-h-[94%] md:max-h-[92%] lg:max-h-[93%] flex flex-col items-center rounded-2xl sm:rounded-[2.25rem] md:rounded-[2.75rem] bg-gradient-to-b from-[#062418]/95 via-[#041a11]/95 to-[#020e09]/98 border sm:border-4 md:border-[5px] border-[#1f382a] ring-1 ring-emerald-400/30 ring-offset-1 sm:ring-offset-4 ring-offset-stone-950 shadow-[0_20px_70px_rgba(0,0,0,0.85)] p-0.5 sm:p-1.5 md:p-2.5 min-h-0 overflow-hidden"
       >
         {/* Subtle Felt Texture & Outer Cushion Rail Accent */}
         <div className="absolute inset-1 sm:inset-3 rounded-xl sm:rounded-[2.75rem] border border-emerald-400/15 pointer-events-none" />
@@ -246,30 +269,52 @@ export const GameTable: React.FC<GameTableProps> = ({
             </div>
           </div>
 
-          {/* Corner 2: Top-Right (Leaderboard & Telemetry: Leader + Total Bids) */}
+          {/* Corner 2: Top-Right (Dedicated Temporary Winner Toast slot OR Leader & Telemetry) */}
           <div
             id="hud-zone-top-right"
             className="absolute top-2.5 right-3 sm:top-3.5 sm:right-4 md:top-4 md:right-5 lg:top-5 lg:right-6 pointer-events-auto"
           >
-            {leaderScoreText && (
-              <div
-                id="badge-score-leader"
-                className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-amber-500/40 text-stone-200 shadow-lg text-[10px] sm:text-xs font-medium"
-              >
-                <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
-                <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-[220px] font-semibold">
-                  {leaderScoreText}
-                </span>
-                {totalBids !== null && (
-                  <>
-                    <span className="text-stone-500 font-normal hidden xs:inline">•</span>
-                    <span className="text-amber-300/90 font-mono text-[9.5px] sm:text-xs hidden xs:inline whitespace-nowrap">
-                      Bids: <strong className="text-amber-300 font-bold">{totalBids}</strong>/13
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
+            <AnimatePresence mode="wait">
+              {winnerToastText ? (
+                <motion.div
+                  key={`winner-toast-${lastCompletedTrick?.trickNumber}-${winnerPos}`}
+                  id="trick-winner-toast"
+                  initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.9, y: -4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                  transition={transitions.springFast}
+                  className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-gradient-to-r from-stone-950 via-[#261c06] to-stone-950 border-2 border-amber-400 text-amber-200 shadow-[0_4px_25px_rgba(0,0,0,0.9),0_0_20px_rgba(251,191,36,0.45)] text-xs sm:text-sm font-bold ring-2 ring-amber-400/40 tracking-wide pointer-events-none"
+                >
+                  <span className="text-amber-400 text-sm sm:text-base shrink-0">🏆</span>
+                  <span className="truncate max-w-[180px] xs:max-w-[220px] sm:max-w-[280px]">
+                    {winnerToastText}
+                  </span>
+                </motion.div>
+              ) : leaderScoreText ? (
+                <motion.div
+                  key="badge-leader-score"
+                  id="badge-score-leader"
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: -2 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -2 }}
+                  transition={transitions.springFast}
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-stone-950/85 backdrop-blur-sm border border-amber-500/40 text-stone-200 shadow-lg text-[10px] sm:text-xs font-medium"
+                >
+                  <span className="text-amber-400 text-xs sm:text-sm shrink-0">👑</span>
+                  <span className="truncate max-w-[120px] xs:max-w-[150px] sm:max-w-[180px] md:max-w-[220px] font-semibold">
+                    {leaderScoreText}
+                  </span>
+                  {totalBids !== null && (
+                    <>
+                      <span className="text-stone-500 font-normal hidden xs:inline">•</span>
+                      <span className="text-amber-300/90 font-mono text-[9.5px] sm:text-xs hidden xs:inline whitespace-nowrap">
+                        Bids: <strong className="text-amber-300 font-bold">{totalBids}</strong>/13
+                      </span>
+                    </>
+                  )}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
 
           {/* Corner 3: Bottom-Left (Last Action / Live Game Event) */}
@@ -278,7 +323,7 @@ export const GameTable: React.FC<GameTableProps> = ({
             className="absolute bottom-20 xs:bottom-22 sm:bottom-24 md:bottom-28 lg:bottom-32 left-3 sm:left-4 md:left-5 lg:left-6 pointer-events-auto max-w-[180px] xs:max-w-[220px] sm:max-w-[260px] md:max-w-[300px]"
           >
             <AnimatePresence>
-              {state.lastActionMessage && (
+              {shouldShowLastActionMessage && state.lastActionMessage && (
                 <motion.div
                   key={state.lastActionMessage}
                   id="trick-action-message"
@@ -446,7 +491,7 @@ export const GameTable: React.FC<GameTableProps> = ({
           </div>
 
           {/* 3. South Zone: Player Badge & 13-Card Hand Tray */}
-          <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-2 sm:mt-4 md:mt-5 overflow-visible">
+          <div id="zone-south-container" className="w-full flex flex-col items-center z-20 pb-0.5 sm:pb-1 shrink-0 mt-1.5 sm:mt-2.5 md:mt-3 overflow-visible">
             {/* South Player Header Badge */}
             <div className="mb-0.5 sm:mb-1 shrink-0">
               <PlayerSlot
