@@ -259,9 +259,9 @@ export function buildScoringEngineTestSuite(): TestHarness {
     assert.equal(check3.isValid, false);
     assert.ok(check3.reason?.includes('must equal 13'));
 
-    // 4. Invalid round number (e.g. 0 or 6)
+    // 4. Invalid round number (e.g. 0 or 11)
     const invalidRoundInput: RoundScoringInput = {
-      roundNumber: 6,
+      roundNumber: 11,
       playerResults: [
         { position: PlayerPosition.SOUTH, bid: 4, tricksWon: 4 },
         { position: PlayerPosition.WEST, bid: 3, tricksWon: 3 },

@@ -54,13 +54,14 @@ export function validateRoundScoringInput(
   const errors: string[] = [];
 
   // 1. Round number validation
+  const maxRounds = 10;
   if (
     typeof input.roundNumber !== 'number' ||
     !Number.isInteger(input.roundNumber) ||
     input.roundNumber < 1 ||
-    input.roundNumber > 5
+    input.roundNumber > maxRounds
   ) {
-    errors.push(`Invalid round number: ${input.roundNumber}. Expected integer between 1 and 5.`);
+    errors.push(`Invalid round number: ${input.roundNumber}. Expected integer between 1 and ${maxRounds}.`);
   }
 
   // 2. Exactly 4 player results
