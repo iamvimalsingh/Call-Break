@@ -261,7 +261,7 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
       </div>
 
       {/* --- Center Info Disc --- */}
-      <div className="z-0 flex flex-col items-center justify-center text-center p-1 sm:p-2 max-w-[100px] xs:max-w-[115px] sm:max-w-[145px] pointer-events-none">
+      <div className="z-0 flex flex-col items-center justify-center text-center p-1 sm:p-2 max-w-[120px] xs:max-w-[140px] sm:max-w-[170px] pointer-events-none">
         <AnimatePresence mode="wait">
           {isShowingCompleted && winnerPos ? (
             <motion.div
@@ -272,9 +272,13 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
               transition={transitions.springFast}
               className="flex flex-col items-center"
             >
-              <span className="flex items-center gap-1 sm:gap-1.5 text-[9px] xs:text-[10px] sm:text-xs font-bold text-amber-200 bg-stone-950/95 border border-amber-400/80 px-2 sm:px-3.5 py-0.5 sm:py-1 rounded-full shadow-xl ring-1 sm:ring-2 ring-amber-400/40">
-                <Trophy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 animate-bounce" />
-                <span>{playerNames[winnerPos]} won!</span>
+              <span className="flex items-center gap-1 sm:gap-1.5 text-[9px] xs:text-[10px] sm:text-xs font-bold text-amber-200 bg-stone-950/95 border border-amber-400/80 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full shadow-xl ring-1 sm:ring-2 ring-amber-400/40">
+                <Trophy className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-400 animate-bounce shrink-0" />
+                <span className="truncate max-w-[110px] sm:max-w-[150px]">
+                  {winnerPos === PlayerPosition.SOUTH
+                    ? `You won Trick ${trickNumber}!`
+                    : `${playerNames[winnerPos]} won Trick ${trickNumber}!`}
+                </span>
               </span>
               <span className="text-[8px] sm:text-[9px] font-mono text-stone-400 mt-0.5 sm:mt-1">
                 Trick {trickNumber} of 13
@@ -287,14 +291,20 @@ export const CenterPlayArea: React.FC<CenterPlayAreaProps> = ({
               </div>
 
               {leadSuitInfo ? (
-                <div className="mt-0.5 sm:mt-1 flex items-center gap-1 text-[9px] xs:text-[10px] sm:text-[11px] font-semibold text-white bg-stone-950/90 px-2 sm:px-3 py-0.5 rounded-full border border-stone-700/80 shadow-md">
+                <div className="mt-0.5 sm:mt-1 flex items-center gap-1 text-[8.5px] xs:text-[9.5px] sm:text-[11px] font-semibold text-white bg-stone-950/90 px-2 sm:px-2.5 py-0.5 rounded-full border border-stone-700/80 shadow-md">
                   <span className="text-stone-400 hidden xs:inline">Lead:</span>
                   <span className="text-emerald-400 font-bold text-xs sm:text-sm leading-none">{leadSuitInfo.symbol}</span>
-                  <span>{leadSuitInfo.name}</span>
+                  <span className="truncate max-w-[45px] sm:max-w-none">{leadSuitInfo.name}</span>
+                  <span className="text-stone-500 font-normal hidden xs:inline">•</span>
+                  <span className="text-amber-300 font-medium text-[8px] sm:text-[9.5px] hidden xs:inline truncate max-w-[55px] sm:max-w-none">
+                    {currentTrick.leader === PlayerPosition.SOUTH ? 'You led' : `${playerNames[currentTrick.leader]} led`}
+                  </span>
                 </div>
               ) : (
-                <div className="mt-0.5 text-[8px] sm:text-[10px] text-stone-400 font-medium">
-                  Lead
+                <div className="mt-0.5 text-[8px] sm:text-[10px] text-stone-300 font-medium bg-stone-950/80 px-2 py-0.5 rounded-full border border-stone-800">
+                  <span>
+                    {currentTrick.leader === PlayerPosition.SOUTH ? 'You lead' : `${playerNames[currentTrick.leader]} leads`}
+                  </span>
                 </div>
               )}
             </div>

@@ -8,6 +8,7 @@ import { PlayerPosition } from '../../src/models/player';
 import { RoomParticipant, RoomState, ServerMessage, TurnTimerPayload } from '../../src/models/multiplayer';
 import { AuthoritativeGameController, PlayerSetupInfo } from './AuthoritativeGameController';
 import { Card } from '../../src/models/card';
+import { GameStatus } from '../../src/models/gameState';
 
 const SEAT_ORDER: readonly PlayerPosition[] = [
   PlayerPosition.SOUTH,
@@ -76,7 +77,25 @@ export class GameRoom {
     socket: WebSocket
   ): { success: boolean; position?: PlayerPosition; error?: string } {
     if (this.status === 'FINISHED') {
-      return { success: false, error: 'Match has ended in this room.' };
+      // Allow reconnecting or joining a finished room so players can wait together for the rematch
+      if (this.clientPositions.has(clientId)) {
+        this.clientSockets.set(clientId, socket);
+        const assignedPos = this.clientPositions.get(clientId)!;
+        if (this.controller) {
+          const perspectiveState = this.controller.getPerspectiveState(assignedPos);
+          const syncMsg: ServerMessage = {
+            type: 'MATCH_SYNC',
+            payload: {
+              roomCode: this.roomCode,
+              state: perspectiveState,
+              myPosition: PlayerPosition.SOUTH,
+              rawPosition: assignedPos,
+            },
+          };
+          socket.send(JSON.stringify(syncMsg));
+        }
+        return { success: true, position: assignedPos };
+      }
     }
 
     if (this.status === 'PLAYING') {
@@ -96,6 +115,24 @@ export class GameRoom {
             },
           };
           socket.send(JSON.stringify(syncMsg));
+
+          // Immediately sync current active turn timer if running
+          const currentTimer = this.controller.getCurrentTimer();
+          if (currentTimer) {
+            const clientIdx = SEAT_ORDER.indexOf(assignedPos);
+            const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
+            const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+            const mappedPos = SEAT_ORDER[mappedIdx];
+
+            const timerMsg: ServerMessage = {
+              type: 'TURN_TIMER',
+              payload: {
+                ...currentTimer,
+                position: mappedPos,
+              },
+            };
+            socket.send(JSON.stringify(timerMsg));
+          }
         }
         return { success: true, position: assignedPos };
       }
@@ -147,6 +184,24 @@ export class GameRoom {
           },
         };
         socket.send(JSON.stringify(syncMsg));
+
+        // Sync active turn timer
+        const currentTimer = this.controller.getCurrentTimer();
+        if (currentTimer) {
+          const clientIdx = SEAT_ORDER.indexOf(botPosition);
+          const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
+          const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+          const mappedPos = SEAT_ORDER[mappedIdx];
+
+          const timerMsg: ServerMessage = {
+            type: 'TURN_TIMER',
+            payload: {
+              ...currentTimer,
+              position: mappedPos,
+            },
+          };
+          socket.send(JSON.stringify(timerMsg));
+        }
       }
 
       // 6. Broadcast updated Room State and Game State to all players
@@ -154,8 +209,7 @@ export class GameRoom {
       this.broadcastGameState();
 
       // 7. Broadcast friendly toast notification to all players
-      const seatLabel = botPosition.charAt(0).toUpperCase() + botPosition.slice(1).toLowerCase();
-      const takeoverMsg = `${incomingName} joined the table (taking over ${seatLabel})!`;
+      const takeoverMsg = `${incomingName} re-joined the table!`;
       this.broadcast({
         type: 'TOAST_NOTIFICATION',
         payload: {
@@ -206,6 +260,9 @@ export class GameRoom {
 
   public removeClient(clientId: string): void {
     const pos = this.clientPositions.get(clientId);
+    const leavingPlayer = pos ? this.players.get(pos) : undefined;
+    const playerName = leavingPlayer ? leavingPlayer.name : 'A player';
+
     this.clientSockets.delete(clientId);
     this.clientPositions.delete(clientId);
 
@@ -220,6 +277,58 @@ export class GameRoom {
       }
 
       this.broadcastRoomState();
+    } else if (this.status === 'PLAYING' && pos) {
+      // Replace departing human seat with an active AI Bot
+      const seatLabel = pos.charAt(0).toUpperCase() + pos.slice(1).toLowerCase();
+      const botName = `Bot (${seatLabel})`;
+      const botParticipant: RoomParticipant = {
+        id: `bot_${pos}`,
+        name: botName,
+        position: pos,
+        isHost: false,
+        isReady: true,
+        isBot: true,
+      };
+      this.players.set(pos, botParticipant);
+
+      // Transfer host if leaving player was the host
+      if (clientId === this.hostClientId) {
+        const nextHuman = Array.from(this.players.values()).find(
+          (p) => !p.isBot && this.clientSockets.has(p.id)
+        );
+        if (nextHuman) {
+          nextHuman.isHost = true;
+          this.hostClientId = nextHuman.id;
+        }
+      }
+
+      // Update authoritative game controller with bot takeover
+      if (this.controller) {
+        this.controller.replacePlayerWithBot(pos, botName);
+      }
+
+      // 1. Broadcast PLAYER_LEFT event to all remaining clients
+      this.broadcast({
+        type: 'PLAYER_LEFT',
+        payload: {
+          clientId,
+          playerName,
+          position: pos,
+        },
+      });
+
+      // 2. Broadcast Toast notification on remaining players' screens
+      this.broadcast({
+        type: 'TOAST_NOTIFICATION',
+        payload: {
+          message: `${playerName} left the table. Bot took over the seat.`,
+          type: 'warning',
+        },
+      });
+
+      // 3. Broadcast updated Room State and Game State
+      this.broadcastRoomState();
+      this.broadcastGameState();
     }
   }
 
@@ -231,8 +340,34 @@ export class GameRoom {
       return { success: false, error: 'Only the room host can start the table.' };
     }
 
-    if (this.status === 'PLAYING') {
+    const isMatchEnded =
+      this.status === 'FINISHED' ||
+      (this.controller && this.controller.getState().status === GameStatus.MATCH_FINISHED);
+
+    if (this.status === 'PLAYING' && !isMatchEnded) {
       return { success: false, error: 'Game is already in progress.' };
+    }
+
+    // Clean up previous controller resources if restarting a match
+    if (this.unsubscribeEvents) {
+      this.unsubscribeEvents();
+      this.unsubscribeEvents = null;
+    }
+    if (this.unsubscribeState) {
+      this.unsubscribeState();
+      this.unsubscribeState = null;
+    }
+    if (this.unsubscribeTimer) {
+      this.unsubscribeTimer();
+      this.unsubscribeTimer = null;
+    }
+    if (this.unsubscribeRebid) {
+      this.unsubscribeRebid();
+      this.unsubscribeRebid = null;
+    }
+    if (this.controller) {
+      this.controller.destroy();
+      this.controller = null;
     }
 
     this.autoFillBots = autoFillBots;
@@ -307,6 +442,10 @@ export class GameRoom {
         type: 'GAME_EVENT',
         payload: event,
       });
+      if (event.type === 'MATCH_COMPLETED') {
+        this.status = 'FINISHED';
+        this.broadcastRoomState();
+      }
     });
 
     this.unsubscribeState = this.controller.onStateChange(() => {

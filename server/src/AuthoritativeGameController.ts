@@ -6,7 +6,7 @@
 
 import { Card, Rank } from '../../src/models/card';
 import { PlayerPosition, PlayerType, PlayerState } from '../../src/models/player';
-import { GameMode, GameState, GameStatus, PlayedCard } from '../../src/models/gameState';
+import { GameMode, GameState, GameStatus, PlayedCard, CompletedTrick } from '../../src/models/gameState';
 import { GameEvent } from '../../src/models/events';
 import { TurnTimerPayload } from '../../src/models/multiplayer';
 import { CardEngine } from '../../src/core/deck/CardEngine';
@@ -392,6 +392,22 @@ export class AuthoritativeGameController {
   }
 
   /**
+   * Returns current active turn timer payload if a turn timer is running.
+   */
+  public getCurrentTimer(): TurnTimerPayload | null {
+    if (!this.currentTimerPlayer || this.remainingSeconds <= 0) {
+      return null;
+    }
+    return {
+      position: this.currentTimerPlayer,
+      rawPosition: this.currentTimerPlayer,
+      remainingSec: this.remainingSeconds,
+      totalSec: this.isExtraTime ? EXTRA_TURN_SECONDS : MAIN_TURN_SECONDS,
+      isExtraTime: this.isExtraTime,
+    };
+  }
+
+  /**
    * Dynamically replaces an AI Bot seat with an incoming human player mid-match.
    * Seamlessly transfers the current round's dealt cards, bid, and won trick counts.
    */
@@ -423,6 +439,43 @@ export class AuthoritativeGameController {
 
     // If this seat was currently taking a turn, switch from bot step to human turn timer immediately
     if (state.currentPlayer === position) {
+      this.advanceTurnOrStepBot();
+    }
+
+    return true;
+  }
+
+  /**
+   * Dynamically replaces a departing human player seat with an AI Bot mid-match.
+   * Seamlessly preserves the player's dealt cards, bid, tricks won, and score.
+   * Clears any active turn timer and immediately schedules bot automation.
+   */
+  public replacePlayerWithBot(position: PlayerPosition, botName?: string): boolean {
+    const state = this.store.getState();
+    const existingPlayer = state.players[position];
+    if (!existingPlayer) return false;
+
+    const defaultName = `Bot (${position.charAt(0).toUpperCase() + position.slice(1).toLowerCase()})`;
+    const updatedPlayer: PlayerState = {
+      ...existingPlayer,
+      id: `bot_${position}`,
+      name: botName || defaultName,
+      type: PlayerType.BOT,
+    };
+
+    const nextPlayers: Record<PlayerPosition, PlayerState> = {
+      ...state.players,
+      [position]: updatedPlayer,
+    };
+
+    this.store.reset({
+      ...state,
+      players: nextPlayers,
+    });
+
+    // If this seat was currently taking a turn, clear human timer and trigger bot move immediately
+    if (state.currentPlayer === position) {
+      this.clearTurnTimer();
       this.advanceTurnOrStepBot();
     }
 
@@ -481,6 +534,19 @@ export class AuthoritativeGameController {
       playerPosition: mapPosition(tc.playerPosition),
     }));
 
+    // Rotate completed tricks so trick winner and played cards match the client's perspective
+    const rotatedCompletedTricks: readonly CompletedTrick[] = state.completedTricks.map((ct) => ({
+      trickNumber: ct.trickNumber,
+      leader: mapPosition(ct.leader),
+      leadSuit: ct.leadSuit,
+      cards: ct.cards.map((c) => ({
+        card: c.card,
+        playedAt: c.playedAt,
+        playerPosition: mapPosition(c.playerPosition),
+      })),
+      winner: mapPosition(ct.winner),
+    }));
+
     // Rotate cumulative scores
     const rotatedCumulativeScores: Record<PlayerPosition, number> = {
       [PlayerPosition.SOUTH]: state.cumulativeScores[POSITIONS[(0 + clientIdx) % 4]],
@@ -500,6 +566,7 @@ export class AuthoritativeGameController {
         winner: state.currentTrick.winner ? mapPosition(state.currentTrick.winner) : null,
         cards: rotatedTrickCards,
       },
+      completedTricks: rotatedCompletedTricks,
       cumulativeScores: rotatedCumulativeScores,
     };
   }

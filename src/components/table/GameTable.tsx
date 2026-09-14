@@ -61,7 +61,7 @@ export const GameTable: React.FC<GameTableProps> = ({
       : null;
 
   const playerNames: Record<PlayerPosition, string> = {
-    [PlayerPosition.SOUTH]: 'You',
+    [PlayerPosition.SOUTH]: southPlayer?.name && southPlayer.name !== 'You' ? southPlayer.name : 'You',
     [PlayerPosition.WEST]: westPlayer?.name ?? 'West',
     [PlayerPosition.NORTH]: northPlayer?.name ?? 'North',
     [PlayerPosition.EAST]: eastPlayer?.name ?? 'East',

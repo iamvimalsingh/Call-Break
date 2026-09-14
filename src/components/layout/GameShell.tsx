@@ -134,6 +134,15 @@ export const GameShell: React.FC = () => {
       sharedGameStore.setState(() => state);
     });
 
+    const unsubStarted = sharedMultiplayerClient.onGameStarted((_roomCode) => {
+      setIsFinalResultOpen(false);
+      setIsHomeOpen(false);
+      setIsRoomLobbyOpen(false);
+      setIsGameModeOpen(false);
+      setIsScoreboardOpen(false);
+      soundManager.play('deal');
+    });
+
     const unsubEvent = sharedMultiplayerClient.onGameEvent((event) => {
       if (event.type === 'CARD_PLAYED') {
         soundManager.play('cardPlay');
@@ -154,9 +163,13 @@ export const GameShell: React.FC = () => {
     });
 
     const unsubTimer = sharedMultiplayerClient.onTurnTimer((payload) => {
-      setTurnTimer(payload);
-      if (payload.isExtraTime && payload.remainingSec <= 5 && payload.remainingSec > 0 && !isMuted) {
-        soundManager.play('tick');
+      if (payload.remainingSec <= 0) {
+        setTurnTimer(null);
+      } else {
+        setTurnTimer(payload);
+        if (payload.isExtraTime && payload.remainingSec <= 5 && !isMuted) {
+          soundManager.play('tick');
+        }
       }
     });
 
@@ -170,6 +183,7 @@ export const GameShell: React.FC = () => {
 
     return () => {
       unsubState();
+      unsubStarted();
       unsubEvent();
       unsubRoom();
       unsubTimer();
@@ -380,8 +394,9 @@ export const GameShell: React.FC = () => {
   // State guard: if a match is actively in progress, require explicit exit confirmation
   const guardActiveMatch = useCallback(
     (action: () => void) => {
+      const currentStatus = sharedGameStore.getState().status;
       const isMatchActive =
-        gameState.status !== GameStatus.IDLE && gameState.status !== GameStatus.MATCH_FINISHED;
+        currentStatus !== GameStatus.IDLE && currentStatus !== GameStatus.MATCH_FINISHED;
 
       if (isMatchActive) {
         soundManager.play('warning');
@@ -391,7 +406,7 @@ export const GameShell: React.FC = () => {
         action();
       }
     },
-    [gameState.status]
+    []
   );
 
   const handleConfirmLeaveMatch = useCallback(() => {
@@ -399,22 +414,51 @@ export const GameShell: React.FC = () => {
     setIsLeaveMatchModalOpen(false);
 
     // Disconnect socket and leave room if multiplayer is active
-    if (gameState.mode === GameMode.ONLINE_MULTIPLAYER || sharedMultiplayerClient.isConnected()) {
+    if (gameState.mode === GameMode.ONLINE_MULTIPLAYER || sharedMultiplayerClient.isConnected() || roomCode) {
       sharedMultiplayerClient.leaveRoom();
       sharedMultiplayerClient.disconnect();
     }
 
-    // Clean up active saved game so seat and state are cleared
+    // Clean up active saved game caches so no match persists in memory/storage
     sharedActiveGameService.clearActiveGame();
+    controller.clearSavedGame();
 
-    // Execute the pending action, or default to returning to Home
+    // Reset local game controller and shared store state to fresh IDLE state immediately
+    controller.initMatch(GameMode.OFFLINE_BOTS, false);
+    sharedGameStore.setState((prev) => ({
+      ...prev,
+      status: GameStatus.IDLE,
+      mode: GameMode.OFFLINE_BOTS,
+    }));
+
+    setHasSavedGame(false);
+    setSavedGameRound(undefined);
+    setRoomCode(null);
+    setIsHost(false);
+    setTurnTimer(null);
+
+    // Close all game-related modals
+    setIsRulesOpen(false);
+    setIsScoreboardOpen(false);
+    setIsHistoryOpen(false);
+    setIsStatisticsOpen(false);
+    setIsSettingsOpen(false);
+    setIsInspectorOpen(false);
+    setIsTutorialOpen(false);
+    setIsTableMenuOpen(false);
+    setIsFinalResultOpen(false);
+
+    // Execute pending action, or default to returning to Home
     if (pendingExitAction) {
-      pendingExitAction();
+      const nextAction = pendingExitAction;
       setPendingExitAction(null);
+      nextAction();
     } else {
+      setIsGameModeOpen(false);
+      setIsRoomLobbyOpen(false);
       setIsHomeOpen(true);
     }
-  }, [gameState.mode, pendingExitAction]);
+  }, [gameState.mode, roomCode, controller, pendingExitAction]);
 
   const handleCancelLeaveMatch = useCallback(() => {
     soundManager.play('click');
@@ -436,6 +480,22 @@ export const GameShell: React.FC = () => {
     setIsGameModeOpen(false);
     setIsRoomLobbyOpen(false);
   }, [controller, gameState.mode]);
+
+  const handlePlayAgain = useCallback(() => {
+    if (gameState.mode === GameMode.ONLINE_MULTIPLAYER) {
+      if (isHost) {
+        sharedMultiplayerClient.rematch();
+      } else {
+        setToast({
+          id: Date.now().toString(),
+          message: 'Waiting for room host to start the rematch...',
+          type: 'info',
+        });
+      }
+    } else {
+      handleStartNewMatch();
+    }
+  }, [gameState.mode, isHost, handleStartNewMatch]);
 
   const handleSelectSolo = useCallback(
     (difficulty: BotDifficulty) => {
@@ -880,7 +940,7 @@ export const GameShell: React.FC = () => {
         state={gameState}
         roomCode={roomCode}
         onStartNewMatch={handleStartNewMatch}
-        onPlayAgain={handleStartNewMatch}
+        onPlayAgain={handlePlayAgain}
         onReturnToRoom={() => {
           setIsFinalResultOpen(false);
           setRoomLobbyTab('create');

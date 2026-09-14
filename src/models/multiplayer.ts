@@ -59,7 +59,9 @@ export type ServerMessage =
   | { type: 'GAME_STARTED'; payload: { roomCode: string } }
   | { type: 'MATCH_SYNC'; payload: { roomCode: string; state: GameState; myPosition: PlayerPosition; rawPosition: PlayerPosition } }
   | { type: 'GAME_STATE'; payload: { state: GameState; myPosition: PlayerPosition; rawPosition: PlayerPosition } }
+  | { type: 'PLAYER_LEFT'; payload: { clientId: string; playerName: string; position: PlayerPosition } }
   | { type: 'TURN_TIMER'; payload: TurnTimerPayload }
+  | { type: 'TURN_TIMER_TICK'; payload: TurnTimerPayload }
   | { type: 'TOAST_NOTIFICATION'; payload: ToastPayload }
   | { type: 'GAME_EVENT'; payload: GameEvent }
   | { type: 'ERROR'; payload: { message: string; code?: string } }

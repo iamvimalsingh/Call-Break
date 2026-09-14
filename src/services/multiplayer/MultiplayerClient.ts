@@ -28,6 +28,11 @@ export type GameStartedListener = (roomCode: string) => void;
 export type ConnectionStateListener = (state: ConnectionState, error: string | null) => void;
 export type TurnTimerListener = (payload: TurnTimerPayload) => void;
 export type ToastListener = (payload: ToastPayload) => void;
+export type PlayerLeftListener = (data: {
+  clientId: string;
+  playerName: string;
+  position: PlayerPosition;
+}) => void;
 
 /**
  * Cleans and sanitizes WebSocket URLs by stripping markdown brackets, parentheses,
@@ -110,6 +115,7 @@ export class MultiplayerClient {
   private gameStartedListeners: Set<GameStartedListener> = new Set();
   private turnTimerListeners: Set<TurnTimerListener> = new Set();
   private toastListeners: Set<ToastListener> = new Set();
+  private playerLeftListeners: Set<PlayerLeftListener> = new Set();
 
   public static getInstance(): MultiplayerClient {
     if (!MultiplayerClient.instance) {
@@ -284,11 +290,16 @@ export class MultiplayerClient {
           break;
 
         case 'TURN_TIMER':
+        case 'TURN_TIMER_TICK':
           this.turnTimerListeners.forEach((fn) => fn(msg.payload));
           break;
 
         case 'TOAST_NOTIFICATION':
           this.toastListeners.forEach((fn) => fn(msg.payload));
+          break;
+
+        case 'PLAYER_LEFT':
+          this.playerLeftListeners.forEach((fn) => fn(msg.payload));
           break;
 
         case 'GAME_EVENT':
@@ -331,6 +342,10 @@ export class MultiplayerClient {
 
   public startGame(autoFillBots: boolean = true): void {
     this.startMatch(autoFillBots);
+  }
+
+  public rematch(): void {
+    this.startMatch(true);
   }
 
   public submitBid(bid: number): void {
@@ -397,6 +412,11 @@ export class MultiplayerClient {
   public onToast(listener: ToastListener): () => void {
     this.toastListeners.add(listener);
     return () => this.toastListeners.delete(listener);
+  }
+
+  public onPlayerLeft(listener: PlayerLeftListener): () => void {
+    this.playerLeftListeners.add(listener);
+    return () => this.playerLeftListeners.delete(listener);
   }
 }
 

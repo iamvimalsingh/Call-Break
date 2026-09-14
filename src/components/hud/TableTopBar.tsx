@@ -127,28 +127,35 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
 
   const phaseBadge = getPhaseBadge(state.status);
 
+  const allBidsSubmitted = Object.values(state.players).every(
+    (p) => p.currentBid !== null && p.currentBid !== undefined
+  );
+  const totalBids = allBidsSubmitted
+    ? Object.values(state.players).reduce((sum, p) => sum + (p.currentBid ?? 0), 0)
+    : null;
+
   return (
-    <header className="w-full bg-stone-950/90 backdrop-blur-xl border-b border-stone-800/90 text-stone-200 px-2 sm:px-6 py-1.5 sm:py-2.5 flex items-center justify-between z-20 select-none shadow-lg shrink-0">
+    <header className="w-full bg-stone-950/90 backdrop-blur-xl border-b border-stone-800/90 text-stone-200 px-2 sm:px-4 md:px-6 py-1.5 sm:py-2 flex items-center justify-between z-20 select-none shadow-lg shrink-0 gap-2">
       {/* Brand & Home Navigation */}
-      <div className="flex items-center gap-1.5 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         <button
           type="button"
           onClick={onOpenHome}
-          className="flex items-center gap-1.5 sm:gap-2.5 group cursor-pointer hover:opacity-95 transition-opacity"
+          className="flex items-center gap-1.5 sm:gap-2 group cursor-pointer hover:opacity-95 transition-opacity"
           title="Game Menu / Home"
         >
-          <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-900 border border-emerald-400/50 flex items-center justify-center font-serif text-sm sm:text-lg text-emerald-200 shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-br from-emerald-600 via-emerald-700 to-emerald-900 border border-emerald-400/50 flex items-center justify-center font-serif text-sm sm:text-base text-emerald-200 shadow-md shadow-emerald-950/50 group-hover:scale-105 transition-transform">
             <span className="text-amber-300 drop-shadow-xs">♠</span>
           </div>
           <div className="text-left">
             <div className="flex items-center gap-1">
-              <span className="text-xs sm:text-base font-extrabold tracking-tight text-white">Call Break</span>
-              <span className="text-[9px] uppercase font-mono px-1 py-0.5 rounded bg-stone-900 border border-stone-700/90 text-stone-300 font-bold hidden xs:inline">
+              <span className="text-xs sm:text-sm font-extrabold tracking-tight text-white">Call Break</span>
+              <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-stone-900 border border-stone-700/90 text-stone-300 font-bold hidden xs:inline">
                 Lakdi
               </span>
             </div>
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className={`text-[8px] sm:text-[10px] font-mono font-semibold px-1.5 sm:px-2 py-0.5 rounded-full border shadow-xs ${phaseBadge.color}`}>
+            <div className="flex items-center gap-1 mt-0.2">
+              <span className={`text-[8px] sm:text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded-full border shadow-xs ${phaseBadge.color}`}>
                 {phaseBadge.label}
               </span>
             </div>
@@ -157,9 +164,9 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
       </div>
 
       {/* Match Context Indicators */}
-      <div className="flex items-center gap-1 sm:gap-2.5 text-[10px] sm:text-xs">
+      <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs overflow-x-auto no-scrollbar py-0.5">
         {/* Round Badge */}
-        <div className="px-1.5 sm:px-3 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 flex items-center gap-1 sm:gap-1.5 shadow-xs">
+        <div className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 flex items-center gap-1 shadow-xs shrink-0">
           <span className="text-stone-400 font-medium">R:</span>
           <span className="font-mono font-bold text-emerald-400">
             {state.currentRound}
@@ -168,33 +175,49 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         </div>
 
         {/* Trump Badge */}
-        <div className="px-1.5 sm:px-3 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 flex items-center gap-1 sm:gap-1.5 shadow-xs">
+        <div className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 flex items-center gap-1 shadow-xs shrink-0">
           <span className="text-stone-400 font-medium hidden xs:inline">Trump:</span>
-          <span className="font-bold text-white flex items-center gap-0.5 sm:gap-1">
-            <span className="text-emerald-400 font-serif text-sm sm:text-base leading-none drop-shadow-xs">{trumpInfo.symbol}</span>
+          <span className="font-bold text-white flex items-center gap-0.5">
+            <span className="text-emerald-400 font-serif text-sm leading-none drop-shadow-xs">{trumpInfo.symbol}</span>
             <span className="hidden md:inline font-semibold">{trumpInfo.name}</span>
           </span>
         </div>
 
+        {/* Total Bids Badge (Active once all 4 players submit bids) */}
+        {totalBids !== null && (
+          <div
+            id="badge-total-bids"
+            className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-amber-950/90 border border-amber-600/80 flex items-center gap-1 shadow-xs shrink-0"
+            title={`Total round bids: ${totalBids} out of 13 tricks`}
+          >
+            <span className="text-amber-200/90 font-medium text-[9px] sm:text-xs">Total Bids:</span>
+            <span className="font-mono font-black text-amber-300">
+              {totalBids}
+              <span className="text-stone-400 font-normal text-[9px] sm:text-[10px]">/13</span>
+            </span>
+          </div>
+        )}
+
         {/* In-Game Table Live Status (Multiplayer) */}
         {isMultiplayer && (
-          <div className="flex items-center">
+          <div className="flex items-center shrink-0">
             {connectionState === 'OPEN' ? (
               <div
                 id="badge-table-online"
-                className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-emerald-950/80 border border-emerald-600/70 flex items-center gap-1.5 shadow-xs text-emerald-300 font-mono text-[9px] sm:text-xs"
+                className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-emerald-950/80 border border-emerald-600/70 flex items-center gap-1.5 shadow-xs text-emerald-300 font-mono text-[9px] sm:text-xs"
                 title={`Connected to online table: ${roomCode || 'Active'}`}
               >
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="font-semibold whitespace-nowrap">Online Room: {roomCode || 'Live'}</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="font-semibold whitespace-nowrap hidden sm:inline">Online Room: </span>
+                <span className="font-bold">{roomCode || 'Live'}</span>
               </div>
             ) : (
               <div
                 id="badge-table-reconnecting"
-                className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-rose-950/80 border border-rose-600/70 flex items-center gap-1.5 shadow-xs text-rose-300 font-mono text-[9px] sm:text-xs"
+                className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-rose-950/80 border border-rose-600/70 flex items-center gap-1.5 shadow-xs text-rose-300 font-mono text-[9px] sm:text-xs"
                 title="Multiplayer server connection interrupted. Attempting to reconnect..."
               >
-                <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping shrink-0" />
                 <span className="font-semibold whitespace-nowrap">Reconnecting...</span>
               </div>
             )}
@@ -202,7 +225,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         )}
 
         {/* Dealer Indicator */}
-        <div className="hidden sm:flex px-2.5 sm:px-3 py-1 rounded-xl bg-stone-900/90 border border-stone-700/80 items-center gap-1.5 shadow-xs">
+        <div className="hidden sm:flex px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-stone-900/90 border border-stone-700/80 items-center gap-1 shadow-xs shrink-0">
           <span className="text-stone-400">Dealer:</span>
           <span className="font-semibold text-amber-300 font-mono">
             {dealerPlayer?.position === PlayerPosition.SOUTH ? 'You' : dealerPlayer?.name ?? state.dealer}
@@ -211,7 +234,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
 
         {/* Active Turn Indicator (Playing phase) */}
         {state.status === GameStatus.PLAYING && (
-          <div className="hidden lg:flex px-3 py-1 rounded-xl bg-emerald-950/80 border border-emerald-600/70 items-center gap-1.5 shadow-sm">
+          <div className="hidden lg:flex px-2.5 py-1 rounded-xl bg-emerald-950/80 border border-emerald-600/70 items-center gap-1.5 shadow-sm shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <span className="text-stone-300 text-[11px]">Turn:</span>
             <span className="font-bold text-emerald-300 text-[11px]">
@@ -222,127 +245,130 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
       </div>
 
       {/* Utility Actions */}
-      <div className="flex items-center gap-1 sm:gap-1.5">
-        {/* PWA Install Button (auto-hides when installed or unavailable) */}
-        <PWAInstallButton variant="compact" />
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0 z-50">
+        {/* Aux Action Buttons */}
+        <div className="hidden md:flex items-center gap-1 sm:gap-1.5">
+          {/* PWA Install Button (auto-hides when installed or unavailable) */}
+          <PWAInstallButton variant="compact" />
 
-        {/* Sound Toggle */}
-        <button
-          type="button"
-          id="btn-nav-sound"
-          onClick={toggleMute}
-          className={`p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl border transition-all hidden md:flex items-center gap-1.5 cursor-pointer ${
-            isMuted
-              ? 'bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border-rose-800/80 shadow-xs'
-              : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border-emerald-800/80 shadow-xs'
-          }`}
-          title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
-          aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
-        >
-          {isMuted ? (
-            <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
-          ) : (
-            <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+          {/* Sound Toggle */}
+          <button
+            type="button"
+            id="btn-nav-sound"
+            onClick={toggleMute}
+            className={`p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              isMuted
+                ? 'bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border-rose-800/80 shadow-xs'
+                : 'bg-emerald-950/60 hover:bg-emerald-900/70 text-emerald-300 border-emerald-800/80 shadow-xs'
+            }`}
+            title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+            aria-label={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+          >
+            {isMuted ? (
+              <VolumeX className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
+            )}
+            <span className="hidden lg:inline font-medium">{isMuted ? 'Muted' : 'Sound'}</span>
+          </button>
+
+          {/* Mode / Lobby Trigger */}
+          {onOpenModeSelect && (
+            <button
+              type="button"
+              id="btn-nav-mode"
+              onClick={onOpenModeSelect}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-amber-300 border border-amber-800/80 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Choose Game Mode & Play with Friends"
+            >
+              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
+              <span className="font-bold">Modes</span>
+            </button>
           )}
-          <span className="hidden md:inline font-medium">{isMuted ? 'Muted' : 'Sound'}</span>
-        </button>
 
-        {/* Mode / Lobby Trigger */}
-        {onOpenModeSelect && (
+          {onOpenSettings && (
+            <button
+              type="button"
+              id="btn-nav-settings"
+              onClick={onOpenSettings}
+              className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="Settings"
+            >
+              <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-300" />
+              <span className="hidden lg:inline font-medium">Settings</span>
+            </button>
+          )}
+
           <button
             type="button"
-            id="btn-nav-mode"
-            onClick={onOpenModeSelect}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-amber-300 border border-amber-800/80 transition-colors hidden md:flex items-center gap-1.5 cursor-pointer shadow-xs"
-            title="Choose Game Mode & Play with Friends"
+            id="btn-open-scoreboard"
+            onClick={onOpenScoreboard}
+            className="p-2 sm:px-3 sm:py-1.5 text-xs rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors flex items-center gap-1.5 font-semibold cursor-pointer shadow-xs"
+            title="View Scoreboard"
           >
-            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
-            <span className="hidden md:inline font-bold">Modes</span>
+            <Trophy className="w-4 h-4 text-amber-400" />
+            <span>Scores</span>
           </button>
-        )}
 
-        {onOpenSettings && (
           <button
             type="button"
-            id="btn-nav-settings"
-            onClick={onOpenSettings}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors hidden md:flex items-center gap-1.5 cursor-pointer shadow-xs"
-            title="Settings"
+            id="btn-nav-rules"
+            onClick={onOpenRules}
+            className="p-2 sm:px-2.5 sm:py-1.5 text-xs rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors hidden lg:flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Rules Guide"
           >
-            <Settings className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-300" />
-            <span className="hidden md:inline font-medium">Settings</span>
+            <BookOpen className="w-4 h-4 text-stone-300" />
+            <span className="font-medium">Rules</span>
           </button>
-        )}
 
-        {/* Live Friend WhatsApp Invite Button (When in multiplayer room with code) */}
+          <button
+            type="button"
+            id="btn-nav-new-game"
+            onClick={onStartNewGame}
+            className="p-2 sm:px-2.5 sm:py-1.5 text-xs rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors hidden xl:flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Start Fresh Match"
+          >
+            <RotateCcw className="w-4 h-4 text-emerald-400" />
+            <span className="font-medium">New Game</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-open-inspector"
+            onClick={onOpenInspector}
+            className="p-2 sm:px-3 sm:py-1.5 text-xs rounded-xl bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/80 transition-colors hidden 2xl:flex items-center gap-1.5 font-semibold cursor-pointer shadow-xs"
+            title="Architecture Inspector & Diagnostics"
+          >
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <span>Diagnostics</span>
+          </button>
+        </div>
+
+        {/* Live Friend WhatsApp Invite Button (Distinct flex item to the left of Menu) */}
         {roomCode && (
           <button
             type="button"
             id="btn-table-invite-whatsapp"
             onClick={handleShareRoom}
-            className="px-2 sm:px-3 py-1 text-[11px] sm:text-xs rounded-lg sm:rounded-xl bg-[#25D366] hover:bg-[#20bd5a] active:bg-[#1da850] text-stone-950 font-black flex items-center gap-1.5 shadow-md shadow-[#25D366]/20 transition-all cursor-pointer select-none"
+            className="px-2 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs rounded-lg sm:rounded-xl bg-[#25D366] hover:bg-[#20bd5a] active:bg-[#1da850] text-stone-950 font-black flex items-center gap-1.5 shadow-md shadow-[#25D366]/25 transition-all cursor-pointer select-none shrink-0"
             title={`Invite friends to this table via WhatsApp (Code: ${roomCode})`}
           >
-            <Share2 className="w-3.5 h-3.5 text-stone-950" />
-            <span className="font-mono font-black tracking-tight">+ Invite ({roomCode})</span>
+            <Share2 className="w-3.5 h-3.5 text-stone-950 shrink-0" />
+            <span className="font-mono font-black tracking-tight whitespace-nowrap">+ Invite ({roomCode})</span>
           </button>
         )}
 
-        <button
-          type="button"
-          id="btn-open-scoreboard"
-          onClick={onOpenScoreboard}
-          className="p-2 sm:px-3 sm:py-1.5 text-xs rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors hidden md:flex items-center gap-1.5 font-semibold cursor-pointer shadow-xs"
-          title="View Scoreboard"
-        >
-          <Trophy className="w-4 h-4 text-amber-400" />
-          <span className="hidden sm:inline">Scores</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-nav-rules"
-          onClick={onOpenRules}
-          className="p-2 sm:px-2.5 sm:py-1.5 text-xs rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors hidden md:flex items-center gap-1.5 cursor-pointer shadow-xs"
-          title="Rules Guide"
-        >
-          <BookOpen className="w-4 h-4 text-stone-300" />
-          <span className="hidden lg:inline font-medium">Rules</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-nav-new-game"
-          onClick={onStartNewGame}
-          className="p-2 sm:px-2.5 sm:py-1.5 text-xs rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 border border-stone-700/80 transition-colors hidden lg:flex items-center gap-1.5 cursor-pointer shadow-xs"
-          title="Start Fresh Match"
-        >
-          <RotateCcw className="w-4 h-4 text-emerald-400" />
-          <span className="font-medium">New Game</span>
-        </button>
-
-        <button
-          type="button"
-          id="btn-open-inspector"
-          onClick={onOpenInspector}
-          className="p-2 sm:px-3 sm:py-1.5 text-xs rounded-xl bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-800/80 transition-colors hidden xl:flex items-center gap-1.5 font-semibold cursor-pointer shadow-xs"
-          title="Architecture Inspector & Diagnostics"
-        >
-          <Layers className="w-4 h-4 text-emerald-400" />
-          <span>Diagnostics</span>
-        </button>
-
-        {/* Clean In-Table Game Menu (☰) in Top-Right Corner */}
+        {/* Clean In-Table Game Menu (☰) in Top-Right Corner with dedicated z-50 click target */}
         {onOpenTableMenu && (
           <button
             type="button"
             id="btn-nav-table-menu"
             onClick={onOpenTableMenu}
-            className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-stone-900/95 hover:bg-stone-800 active:bg-stone-950 text-stone-200 border border-stone-700/90 transition-all flex items-center gap-1.5 font-bold cursor-pointer shadow-sm ml-0.5"
+            className="p-1.5 sm:px-3 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-stone-900/95 hover:bg-stone-800 active:bg-stone-950 text-stone-200 border border-stone-700/90 transition-all flex items-center gap-1.5 font-bold cursor-pointer shadow-sm shrink-0 z-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
             title="In-Table Game Menu (☰)"
             aria-label="In-Table Game Menu"
           >
-            <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-400" />
+            <Menu className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-400 shrink-0" />
             <span className="hidden sm:inline font-bold">Menu</span>
           </button>
         )}

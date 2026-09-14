@@ -150,8 +150,10 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
 
           <div
             className={`w-6 h-6 xs:w-7 xs:h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center text-[10px] sm:text-xs font-bold border shrink-0 relative shadow-inner ${
-              isHuman
+              isSouth
                 ? 'bg-gradient-to-br from-emerald-600 to-emerald-800 text-white border-emerald-400/60 shadow-emerald-900/40'
+                : isHuman
+                ? 'bg-gradient-to-br from-blue-600 to-indigo-800 text-white border-blue-400/60 shadow-blue-900/40'
                 : isCurrentTurn
                 ? isExtra
                   ? 'bg-gradient-to-br from-rose-900 to-red-950 text-red-200 border-red-500/80 shadow-red-950/60'
@@ -159,27 +161,34 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
                 : 'bg-stone-800 text-stone-300 border-stone-600/80'
             }`}
           >
-            {isHuman ? (
-              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            {isSouth ? (
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100" />
+            ) : isHuman ? (
+              <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-200" />
             ) : isCurrentTurn ? (
               <BrainCircuit className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isExtra ? 'text-red-400' : 'text-amber-300'} animate-pulse`} />
             ) : (
-              <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
             )}
           </div>
         </div>
 
         {/* Name & Stats */}
         <div className={`flex flex-col min-w-0 ${isSidePlayer ? 'items-center sm:items-start' : 'items-start'}`}>
-          <div className="flex items-center justify-center sm:justify-start gap-1">
+          <div className="flex items-center justify-center sm:justify-start gap-1 max-w-full">
             <span
               className={`font-bold text-white leading-tight ${
                 isSidePlayer
                   ? 'text-[10px] xs:text-[11px] sm:text-xs max-w-[76px] xs:max-w-[88px] sm:max-w-[100px] truncate'
                   : 'text-[11px] xs:text-xs sm:text-sm max-w-[90px] sm:max-w-[120px] truncate'
               }`}
+              title={isSouth ? (player.name && player.name !== 'You' ? `${player.name} (You)` : 'You') : player.name}
             >
-              {isHuman ? 'You' : player.name}
+              {isSouth
+                ? player.name && player.name !== 'You'
+                  ? `${player.name} (You)`
+                  : 'You'
+                : player.name}
             </span>
 
             {/* Turn Timer Badge or Turn Pulse Dot */}
@@ -207,18 +216,19 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
             ) : null}
           </div>
 
-          <div className="flex items-center justify-center sm:justify-start gap-1 text-[8px] xs:text-[9px] sm:text-[10px] text-stone-400 font-mono whitespace-nowrap mt-0.5 sm:mt-0">
+          {/* Explicit Trick Progression: Bid: [X] • Won: [Y] */}
+          <div className="flex items-center justify-center sm:justify-start gap-1 text-[8px] xs:text-[9px] sm:text-[10px] text-stone-300 font-mono whitespace-nowrap mt-0.5 sm:mt-0">
             <span>
-              C:<strong className="text-amber-300 font-semibold">{player.currentBid ?? '—'}</strong>
+              Bid: <strong className="text-amber-300 font-bold">{player.currentBid ?? '—'}</strong>
             </span>
-            <span className="text-stone-600">•</span>
+            <span className="text-stone-500 font-bold">•</span>
             <span>
-              W:{' '}
+              Won:{' '}
               <strong
                 className={
-                  player.currentBid && player.tricksWon >= player.currentBid
-                    ? 'text-emerald-400 font-bold'
-                    : 'text-stone-300 font-bold'
+                  player.currentBid !== null && player.tricksWon >= player.currentBid
+                    ? 'text-emerald-400 font-extrabold'
+                    : 'text-stone-200 font-bold'
                 }
               >
                 {player.tricksWon}
