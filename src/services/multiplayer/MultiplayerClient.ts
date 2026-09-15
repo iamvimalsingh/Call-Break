@@ -648,6 +648,13 @@ export class MultiplayerClient {
     });
   }
 
+  public sendClientReady(roomCode?: string): void {
+    this.send({
+      type: 'CLIENT_READY',
+      payload: { roomCode: roomCode || this.currentRoomState?.roomCode },
+    });
+  }
+
   public startMatch(autoFillBots: boolean = true, totalRounds: number = 5): void {
     this.send({
       type: 'START_MATCH',

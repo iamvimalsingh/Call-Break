@@ -133,6 +133,14 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             break;
           }
 
+          case 'CLIENT_READY': {
+            const room = roomManager.getRoomByClientId(clientId);
+            if (room) {
+              room.handleClientReady(clientId);
+            }
+            break;
+          }
+
           case 'RENAME_PLAYER': {
             const room = roomManager.getRoomByClientId(clientId);
             if (room) {

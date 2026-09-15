@@ -62,6 +62,7 @@ export class AuthoritativeGameController {
   private currentTimerPlayer: PlayerPosition | null = null;
   private remainingSeconds: number = MAIN_TURN_SECONDS;
   private isExtraTime: boolean = false;
+  private isMatchTurnProgressionStarted: boolean = false;
   private unsubscribeStore: (() => void) | null = null;
 
   constructor() {
@@ -192,7 +193,11 @@ export class AuthoritativeGameController {
    * GameMode is set to ONLINE_MULTIPLAYER, ensuring 100% unweighted uniform random
    * cryptographic Fisher-Yates dealing with zero card bias or player favoritism.
    */
-  public initializeMatch(players: Record<PlayerPosition, PlayerSetupInfo>, totalRounds: number = 5): void {
+  public initializeMatch(
+    players: Record<PlayerPosition, PlayerSetupInfo>,
+    totalRounds: number = 5,
+    autoStartProgression: boolean = false
+  ): void {
     const rawState = createInitialGameState(GameMode.ONLINE_MULTIPLAYER);
 
     const configuredPlayers: Record<PlayerPosition, PlayerState> = {
@@ -232,8 +237,21 @@ export class AuthoritativeGameController {
       players: configuredPlayers,
     };
 
+    this.isMatchTurnProgressionStarted = false;
     this.store.reset(nextState);
     this.controller.startRound();
+    if (autoStartProgression) {
+      this.startTurnProgression();
+    }
+  }
+
+  /**
+   * Starts turn progression / bot stepping after clients have confirmed readiness.
+   * Safe to call multiple times (idempotent).
+   */
+  public startTurnProgression(): void {
+    if (this.isMatchTurnProgressionStarted) return;
+    this.isMatchTurnProgressionStarted = true;
     this.advanceTurnOrStepBot();
   }
 

@@ -68,6 +68,7 @@ export interface JoinRequestStatusPayload {
 }
 
 export type ClientMessage =
+  | { type: 'CLIENT_READY'; payload?: { roomCode?: string } }
   | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string; totalRounds?: number; playerId?: string } }
   | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string; playerId?: string } }
   | { type: 'RESPOND_JOIN_REQUEST'; payload: { requestId: string; accept: boolean; targetSeat?: PlayerPosition } }

@@ -89,6 +89,7 @@ export class GameRoom {
   private unsubscribeTimer: (() => void) | null = null;
   private unsubscribeRebid: (() => void) | null = null;
   private unsubscribeTimeoutTakeover: (() => void) | null = null;
+  private readyFallbackTimer: NodeJS.Timeout | null = null;
 
   constructor(roomCode: string, hostClientId: string, hostName: string, hostSocket: WebSocket) {
     this.roomCode = normalizeRoomCode(roomCode);
@@ -1182,8 +1183,29 @@ export class GameRoom {
       }
     });
 
-    this.controller.initializeMatch(playerConfigs, this.totalRounds);
+    this.controller.initializeMatch(playerConfigs, this.totalRounds, false);
+    this.broadcastGameState();
+
+    if (this.readyFallbackTimer) {
+      clearTimeout(this.readyFallbackTimer);
+    }
+    this.readyFallbackTimer = setTimeout(() => {
+      if (this.status === 'PLAYING' && this.controller) {
+        this.controller.startTurnProgression();
+      }
+    }, 1500);
+
     return { success: true };
+  }
+
+  public handleClientReady(_clientId: string): void {
+    if (this.readyFallbackTimer) {
+      clearTimeout(this.readyFallbackTimer);
+      this.readyFallbackTimer = null;
+    }
+    if (this.status === 'PLAYING' && this.controller) {
+      this.controller.startTurnProgression();
+    }
   }
 
   public renameSeat(
@@ -1392,6 +1414,10 @@ export class GameRoom {
     }
     this.disconnectedSeats.clear();
     this.pendingJoinRequests.clear();
+    if (this.readyFallbackTimer) {
+      clearTimeout(this.readyFallbackTimer);
+      this.readyFallbackTimer = null;
+    }
     if (this.unsubscribeEvents) this.unsubscribeEvents();
     if (this.unsubscribeState) this.unsubscribeState();
     if (this.unsubscribeTimer) this.unsubscribeTimer();

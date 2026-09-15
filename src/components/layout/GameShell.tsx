@@ -133,6 +133,7 @@ export const GameShell: React.FC = () => {
       setIsRoomLobbyOpen(false);
       setIsScoreboardOpen(false);
       soundManager.play('deal');
+      sharedMultiplayerClient.sendClientReady(_roomCode);
     });
 
     const unsubEvent = sharedMultiplayerClient.onGameEvent((event) => {
