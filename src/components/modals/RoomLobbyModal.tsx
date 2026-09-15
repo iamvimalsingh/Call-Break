@@ -337,7 +337,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     <AnimatePresence>
       <div
         id="modal-room-lobby-backdrop"
-        className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto select-none"
+        className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-start sm:items-center justify-center p-2 sm:p-6 overflow-y-auto select-none pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]"
         onClick={onClose}
       >
         <motion.div
@@ -347,147 +347,153 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
           transition={transitions.springFast}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-lg bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-stone-700/80 rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.85)] p-5 sm:p-7 flex flex-col text-left relative overflow-hidden ring-1 ring-white/10"
+          className="w-full max-w-lg max-h-[calc(100dvh-1rem)] sm:max-h-[min(90dvh,880px)] bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-stone-700/80 rounded-2xl sm:rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.85)] flex flex-col text-left relative overflow-hidden ring-1 ring-white/10"
         >
           {/* Ambient Glows */}
           <div className="absolute -top-20 -left-20 w-44 h-44 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute -bottom-20 -right-20 w-44 h-44 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-          {/* Navigation Bar */}
-          <div className="flex items-center justify-between pb-4 border-b border-stone-800/90 mb-4">
-            <button
-              type="button"
-              id="btn-back-to-mode-select"
-              onClick={() => {
-                soundManager.play('click');
-                if (hasJoinedRoom) {
-                  handleLeaveLobby();
-                } else if (onBackToModes) {
-                  onBackToModes();
-                } else {
+          {/* Fixed/Sticky Header Area: Navigation Bar, Connection Status, and Tabs */}
+          <div className="shrink-0 p-4 sm:p-6 pb-3 sm:pb-4 border-b border-stone-800/80 bg-stone-900/95 backdrop-blur-sm z-10 space-y-3 sm:space-y-4">
+            {/* Navigation Bar */}
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                id="btn-back-to-mode-select"
+                onClick={() => {
+                  soundManager.play('click');
+                  if (hasJoinedRoom) {
+                    handleLeaveLobby();
+                  } else if (onBackToModes) {
+                    onBackToModes();
+                  } else {
+                    onClose();
+                  }
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-300 border border-stone-700/60 flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>{hasJoinedRoom ? 'Leave Room' : 'Back to Lobby'}</span>
+              </button>
+
+              {/* Real Connection State Badge */}
+              <div className="flex items-center gap-2">
+                {connectionState === 'OPEN' && (
+                  <span
+                    id="status-badge-connected"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-400 font-mono text-[11px] font-bold"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>Connected to Server</span>
+                  </span>
+                )}
+
+                {connectionState === 'CONNECTING' && (
+                  <span
+                    id="status-badge-connecting"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-700/60 text-amber-300 font-mono text-[11px] font-bold"
+                  >
+                    <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+                    <span>Connecting to server...</span>
+                  </span>
+                )}
+
+                {(connectionState === 'CLOSED' || connectionState === 'ERROR') && (
+                  <button
+                    type="button"
+                    id="status-badge-disconnected"
+                    onClick={handleRetryConnection}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/80 hover:bg-rose-900/80 border border-rose-700/60 text-rose-300 font-mono text-[11px] font-bold cursor-pointer transition-colors"
+                    title="Click to reconnect"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    <span>Server Disconnected / Offline</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                id="btn-close-room-lobby"
+                onClick={() => {
+                  soundManager.play('click');
                   onClose();
-                }
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-300 border border-stone-700/60 flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>{hasJoinedRoom ? 'Leave Room' : 'Back to Lobby'}</span>
-            </button>
-
-            {/* Real Connection State Badge */}
-            <div className="flex items-center gap-2">
-              {connectionState === 'OPEN' && (
-                <span
-                  id="status-badge-connected"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/60 text-emerald-400 font-mono text-[11px] font-bold"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span>Connected to Server</span>
-                </span>
-              )}
-
-              {connectionState === 'CONNECTING' && (
-                <span
-                  id="status-badge-connecting"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-700/60 text-amber-300 font-mono text-[11px] font-bold"
-                >
-                  <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
-                  <span>Connecting to server...</span>
-                </span>
-              )}
-
-              {(connectionState === 'CLOSED' || connectionState === 'ERROR') && (
-                <button
-                  type="button"
-                  id="status-badge-disconnected"
-                  onClick={handleRetryConnection}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-950/80 hover:bg-rose-900/80 border border-rose-700/60 text-rose-300 font-mono text-[11px] font-bold cursor-pointer transition-colors"
-                  title="Click to reconnect"
-                >
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span>Server Disconnected / Offline</span>
-                </button>
-              )}
+                }}
+                className="w-8 h-8 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 flex items-center justify-center cursor-pointer transition-colors"
+                aria-label="Close modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <button
-              type="button"
-              id="btn-close-room-lobby"
-              onClick={() => {
-                soundManager.play('click');
-                onClose();
-              }}
-              className="w-8 h-8 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 flex items-center justify-center cursor-pointer transition-colors"
-              aria-label="Close modal"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Offline / Disconnected Notice Banner */}
-          {(connectionState === 'CLOSED' || connectionState === 'ERROR') && (
-            <div
-              id="banner-server-offline"
-              className="mb-4 p-3 rounded-2xl bg-rose-950/60 border border-rose-800/80 flex items-center justify-between gap-3 text-rose-200 text-xs shadow-lg shadow-rose-950/40"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="font-bold text-rose-100">Server Disconnected / Offline</div>
-                  <div className="text-[11px] text-rose-300 truncate">
-                    {connectionError || 'Cannot connect to multiplayer WebSocket server.'}
+            {/* Offline / Disconnected Notice Banner */}
+            {(connectionState === 'CLOSED' || connectionState === 'ERROR') && (
+              <div
+                id="banner-server-offline"
+                className="p-3 rounded-2xl bg-rose-950/60 border border-rose-800/80 flex items-center justify-between gap-3 text-rose-200 text-xs shadow-lg shadow-rose-950/40"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-bold text-rose-100">Server Disconnected / Offline</div>
+                    <div className="text-[11px] text-rose-300 truncate">
+                      {connectionError || 'Cannot connect to multiplayer WebSocket server.'}
+                    </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  id="btn-retry-websocket"
+                  onClick={handleRetryConnection}
+                  className="px-3 py-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white font-bold text-xs shrink-0 cursor-pointer transition-colors shadow-sm"
+                >
+                  Retry
+                </button>
               </div>
-              <button
-                type="button"
-                id="btn-retry-websocket"
-                onClick={handleRetryConnection}
-                className="px-3 py-1.5 rounded-xl bg-rose-800 hover:bg-rose-700 text-white font-bold text-xs shrink-0 cursor-pointer transition-colors shadow-sm"
-              >
-                Retry
-              </button>
-            </div>
-          )}
+            )}
 
-          {/* Tab Selection (only when not inside joined room) */}
-          {!hasJoinedRoom && (
-            <div className="grid grid-cols-2 p-1 rounded-2xl bg-stone-950/90 border border-stone-800/90 mb-5">
-              <button
-                type="button"
-                id="tab-btn-create-room"
-                onClick={() => {
-                  soundManager.play('click');
-                  setActiveTab('create');
-                }}
-                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  activeTab === 'create'
-                    ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-950/50'
-                    : 'text-stone-400 hover:text-white hover:bg-stone-900/60'
-                }`}
-              >
-                <PlusCircle className="w-4 h-4" />
-                <span>Create Room</span>
-              </button>
+            {/* Tab Selection (only when not inside joined room) */}
+            {!hasJoinedRoom && (
+              <div className="grid grid-cols-2 p-1 rounded-2xl bg-stone-950/90 border border-stone-800/90">
+                <button
+                  type="button"
+                  id="tab-btn-create-room"
+                  onClick={() => {
+                    soundManager.play('click');
+                    setActiveTab('create');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    activeTab === 'create'
+                      ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-950/50'
+                      : 'text-stone-400 hover:text-white hover:bg-stone-900/60'
+                  }`}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Create Room</span>
+                </button>
 
-              <button
-                type="button"
-                id="tab-btn-join-room"
-                onClick={() => {
-                  soundManager.play('click');
-                  setActiveTab('join');
-                }}
-                className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  activeTab === 'join'
-                    ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-950/50'
-                    : 'text-stone-400 hover:text-white hover:bg-stone-900/60'
-                }`}
-              >
-                <LogIn className="w-4 h-4" />
-                <span>Join Room</span>
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  id="tab-btn-join-room"
+                  onClick={() => {
+                    soundManager.play('click');
+                    setActiveTab('join');
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    activeTab === 'join'
+                      ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-950/50'
+                      : 'text-stone-400 hover:text-white hover:bg-stone-900/60'
+                  }`}
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Join Room</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Scrollable Content Area */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 pt-3 sm:pt-4 space-y-4 touch-pan-y custom-scrollbar">
 
           {/* Tab Content: CREATE ROOM OR JOINED ROOM WAITING LOBBY */}
           {(activeTab === 'create' || hasJoinedRoom) && (
@@ -1057,13 +1063,14 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
           )}
 
           {/* Footer note */}
-          <div className="mt-4 pt-3 border-t border-stone-800/60 text-center">
+          <div className="mt-4 pt-3 border-t border-stone-800/60 text-center pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             <span className="text-[11px] text-stone-400 font-mono">
               Online Private Rooms • Authoritative Call Break Multiplayer
             </span>
           </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
-  );
+        </div>
+      </motion.div>
+    </div>
+  </AnimatePresence>
+);
 };

@@ -79,7 +79,7 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   return (
     <div
       id="modal-match-result-backdrop"
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 select-none"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-start sm:items-center justify-center p-2 sm:p-6 select-none overflow-y-auto pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]"
     >
       <motion.div
         id="modal-match-result-dialog"
@@ -87,45 +87,47 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
         transition={transitions.springSmooth}
-        className="w-full max-w-xl bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-emerald-500/50 rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.9)] overflow-hidden text-stone-200 ring-1 ring-emerald-500/25"
+        className="w-full max-w-xl max-h-[calc(100dvh-1rem)] sm:max-h-[min(90dvh,880px)] bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-emerald-500/50 rounded-2xl sm:rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden text-stone-200 ring-1 ring-emerald-500/25"
       >
-        {/* Match Winner Hero Banner */}
-        <div className="p-6 sm:p-8 bg-gradient-to-b from-emerald-950/90 via-stone-900/95 to-stone-900 text-center border-b border-stone-800/90 relative overflow-hidden">
-          {/* Celebratory ambient glow */}
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/15 via-transparent to-transparent pointer-events-none" />
+        {/* Scrollable Result Content Container */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
+          {/* Match Winner Hero Banner */}
+          <div className="p-5 sm:p-8 bg-gradient-to-b from-emerald-950/90 via-stone-900/95 to-stone-900 text-center border-b border-stone-800/90 relative overflow-hidden">
+            {/* Celebratory ambient glow */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-amber-500/15 via-transparent to-transparent pointer-events-none" />
 
-          <motion.div
-            initial={prefersReducedMotion ? false : { scale: 0, rotate: -20 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={transitions.springSmooth}
-            className="w-16 h-16 sm:w-20 sm:h-20 mx-auto rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 border border-amber-300 flex items-center justify-center shadow-xl shadow-amber-500/25 mb-3"
-          >
-            <Trophy className="w-9 h-9 sm:w-11 sm:h-11 text-stone-950 drop-shadow-sm" />
-          </motion.div>
+            <motion.div
+              initial={prefersReducedMotion ? false : { scale: 0, rotate: -20 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={transitions.springSmooth}
+              className="w-14 h-14 sm:w-20 sm:h-20 mx-auto rounded-2xl bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 border border-amber-300 flex items-center justify-center shadow-xl shadow-amber-500/25 mb-2.5 sm:mb-3"
+            >
+              <Trophy className="w-8 h-8 sm:w-11 sm:h-11 text-stone-950 drop-shadow-sm" />
+            </motion.div>
 
-          <div className="text-xs uppercase font-mono tracking-widest text-emerald-400 font-bold mb-1 flex items-center justify-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>5-Round Match Complete</span>
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <div className="text-[11px] sm:text-xs uppercase font-mono tracking-widest text-emerald-400 font-bold mb-1 flex items-center justify-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>{state.config.totalRounds}-Round Match Complete</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            </div>
+
+            <h2 className="text-xl sm:text-3xl font-black text-white tracking-tight">
+              {isTie
+                ? `Tie Match: ${winners.map(getPlayerDisplayName).join(' & ')}!`
+                : humanWon
+                ? '🏆 You Won the Match!'
+                : `🏆 ${getPlayerDisplayName(winners[0])} Won the Match!`}
+            </h2>
+
+            <p className="text-xs sm:text-sm text-stone-400 mt-1 max-w-md mx-auto font-medium">
+              {humanWon
+                ? `Congratulations! You achieved the highest cumulative score across all ${state.config.totalRounds} rounds.`
+                : `${getPlayerDisplayName(winners[0])} concluded with the highest cumulative score.`}
+            </p>
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            {isTie
-              ? `Tie Match: ${winners.map(getPlayerDisplayName).join(' & ')}!`
-              : humanWon
-              ? '🏆 You Won the Match!'
-              : `🏆 ${getPlayerDisplayName(winners[0])} Won the Match!`}
-          </h2>
-
-          <p className="text-xs sm:text-sm text-stone-400 mt-1 max-w-md mx-auto font-medium">
-            {humanWon
-              ? 'Congratulations! You achieved the highest cumulative score across all 5 rounds.'
-              : `${getPlayerDisplayName(winners[0])} concluded with the highest cumulative score.`}
-          </p>
-        </div>
-
-        {/* Final Standings Rankings */}
-        <div className="p-5 sm:p-6 space-y-4">
+          {/* Final Standings Rankings */}
+          <div className="p-4 sm:p-6 space-y-4">
           <div className="text-xs font-mono uppercase tracking-wider text-stone-400 font-bold">
             Final Standings
           </div>
@@ -242,64 +244,65 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
             </table>
           </div>
         </div>
+      </div>
 
-        {/* Footer */}
-        <div className="p-4 sm:p-5 border-t border-stone-800/90 bg-stone-950/90 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            {onOpenHome && (
-              <button
-                type="button"
-                id="btn-match-return-home"
-                onClick={onOpenHome}
-                className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                title="Return to Main Menu"
-              >
-                <Home className="w-4 h-4 text-stone-300" />
-                <span>Main Menu</span>
-              </button>
-            )}
-            {onOpenHistory && (
-              <button
-                type="button"
-                id="btn-match-view-history"
-                onClick={onOpenHistory}
-                className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-              >
-                <History className="w-4 h-4 text-amber-400" />
-                <span className="hidden xs:inline">Match History</span>
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
-            {(roomCode || state.mode === GameMode.ONLINE_MULTIPLAYER) && onReturnToRoom && (
-              <button
-                type="button"
-                id="btn-match-return-room"
-                onClick={onReturnToRoom}
-                className="px-4 py-2 sm:py-2.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border border-amber-800/80 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-                title="Return to Multiplayer Room Lobby"
-              >
-                <Users className="w-4 h-4 text-amber-400" />
-                <span>Return to Room</span>
-              </button>
-            )}
-
-            <motion.button
+      {/* Fixed/Sticky Action Footer */}
+      <div className="shrink-0 p-3 sm:p-5 border-t border-stone-800/90 bg-stone-950/95 backdrop-blur-sm flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-5">
+        <div className="flex items-center gap-2 flex-wrap">
+          {onOpenHome && (
+            <button
               type="button"
-              id="btn-match-play-again"
-              onClick={onPlayAgain || onStartNewMatch}
-              whileHover={!prefersReducedMotion ? { scale: 1.03 } : undefined}
-              whileTap={!prefersReducedMotion ? { scale: 0.97 } : undefined}
-              className="w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"
-              title="Play again with same players"
+              id="btn-match-return-home"
+              onClick={onOpenHome}
+              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="Return to Main Menu"
             >
-              <RotateCcw className="w-4 h-4" />
-              <span>Play Again</span>
-            </motion.button>
-          </div>
+              <Home className="w-4 h-4 text-stone-300" />
+              <span>Main Menu</span>
+            </button>
+          )}
+          {onOpenHistory && (
+            <button
+              type="button"
+              id="btn-match-view-history"
+              onClick={onOpenHistory}
+              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <History className="w-4 h-4 text-amber-400" />
+              <span className="hidden xs:inline">Match History</span>
+            </button>
+          )}
         </div>
-      </motion.div>
-    </div>
-  );
+
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
+          {(roomCode || state.mode === GameMode.ONLINE_MULTIPLAYER) && onReturnToRoom && (
+            <button
+              type="button"
+              id="btn-match-return-room"
+              onClick={onReturnToRoom}
+              className="px-4 py-2 sm:py-2.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border border-amber-800/80 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              title="Return to Multiplayer Room Lobby"
+            >
+              <Users className="w-4 h-4 text-amber-400" />
+              <span>Return to Room</span>
+            </button>
+          )}
+
+          <motion.button
+            type="button"
+            id="btn-match-play-again"
+            onClick={onPlayAgain || onStartNewMatch}
+            whileHover={!prefersReducedMotion ? { scale: 1.03 } : undefined}
+            whileTap={!prefersReducedMotion ? { scale: 0.97 } : undefined}
+            className="w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"
+            title="Play again with same players"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Play Again</span>
+          </motion.button>
+        </div>
+      </div>
+    </motion.div>
+  </div>
+);
 };
