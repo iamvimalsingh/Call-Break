@@ -454,6 +454,9 @@ export class LocalGameController implements IGameController {
   public completeRound(): void {
     const current = this.store.getState();
     if (this.scoringEngine) {
+      if (current.roundScores.some((r) => r.roundNumber === current.currentRound)) {
+        return;
+      }
       const nextState = this.scoringEngine.applyRoundScoresToState(current);
       const latestRoundScore = nextState.roundScores[nextState.roundScores.length - 1];
 

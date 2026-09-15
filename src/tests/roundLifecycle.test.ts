@@ -144,5 +144,63 @@ export function buildRoundLifecycleTestSuite(): TestHarness {
     }
   );
 
+  harness.register(
+    category,
+    'AuthoritativeGameController perspective state properly rotates roundScores and matchResult for non-host players',
+    () => {
+      const authController = new AuthoritativeGameController();
+      authController.initializeMatch({
+        [PlayerPosition.SOUTH]: { id: 'p1_south', name: 'South Player', isBot: false, position: PlayerPosition.SOUTH },
+        [PlayerPosition.WEST]: { id: 'p2_west', name: 'West Player', isBot: false, position: PlayerPosition.WEST },
+        [PlayerPosition.NORTH]: { id: 'p3_north', name: 'North Player', isBot: false, position: PlayerPosition.NORTH },
+        [PlayerPosition.EAST]: { id: 'p4_east', name: 'East Player', isBot: false, position: PlayerPosition.EAST },
+      }, 5);
+
+      authController.clearTurnTimer();
+      authController.clearRoundTransitionTimer();
+
+      const rules = new CallBreakRulesEngine();
+
+      // Complete Round 1 bidding
+      let state = authController.getState();
+      while (state.status === GameStatus.BIDDING) {
+        authController.submitBid(state.currentPlayer, 3);
+        authController.clearTurnTimer();
+        state = authController.getState();
+      }
+
+      // Play 13 tricks
+      for (let trick = 1; trick <= 13; trick++) {
+        for (let step = 0; step < 4; step++) {
+          state = authController.getState();
+          const curPlayer = state.currentPlayer;
+          const moves = rules.getLegalMoves(state.players[curPlayer].hand, state.currentTrick, state.config.trumpSuit);
+          authController.playCard(curPlayer, moves[0]);
+          authController.clearTurnTimer();
+        }
+      }
+
+      // Check perspective state for WEST player
+      const westPerspective = authController.getPerspectiveState(PlayerPosition.WEST);
+      if (westPerspective.roundScores.length !== 1) {
+        throw new Error(`Expected 1 round score in perspective, got ${westPerspective.roundScores.length}`);
+      }
+
+      // WEST player should see their own score at SOUTH in perspective
+      const westRecord = westPerspective.roundScores[0];
+      if (!westRecord.scores[PlayerPosition.SOUTH]) {
+        throw new Error('Perspective round scores must have SOUTH record');
+      }
+
+      // Raw WEST score should match perspective SOUTH score
+      const rawRecord = authController.getState().roundScores[0];
+      if (westRecord.scores[PlayerPosition.SOUTH].roundScore !== rawRecord.scores[PlayerPosition.WEST].roundScore) {
+        throw new Error('West perspective SOUTH score must match raw WEST score');
+      }
+
+      authController.destroy();
+    }
+  );
+
   return harness;
 }

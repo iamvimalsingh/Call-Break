@@ -6,7 +6,16 @@
 
 import { Card, Rank } from '../../src/models/card';
 import { PlayerPosition, PlayerType, PlayerState } from '../../src/models/player';
-import { GameMode, GameState, GameStatus, PlayedCard, CompletedTrick } from '../../src/models/gameState';
+import {
+  GameMode,
+  GameState,
+  GameStatus,
+  PlayedCard,
+  CompletedTrick,
+  RoundScoreRecord,
+  PlayerRoundScore,
+  MatchResult,
+} from '../../src/models/gameState';
 import { GameEvent } from '../../src/models/events';
 import { TurnTimerPayload } from '../../src/models/multiplayer';
 import { CardEngine } from '../../src/core/deck/CardEngine';
@@ -280,14 +289,12 @@ export class AuthoritativeGameController {
   private scheduleNextRoundAutoTransition(delayMs: number = 4000): void {
     this.clearRoundTransitionTimer();
     this.roundTransitionTimer = setTimeout(() => {
+      this.roundTransitionTimer = null;
       const state = this.store.getState();
       if (state.status === GameStatus.ROUND_ENDED && state.currentRound < state.config.totalRounds) {
         this.startNextRound();
       }
     }, delayMs);
-    if (typeof (this.roundTransitionTimer as any)?.unref === 'function') {
-      (this.roundTransitionTimer as any).unref();
-    }
   }
 
   /**
@@ -299,8 +306,11 @@ export class AuthoritativeGameController {
     // 1. If round ended (completed 13 tricks)
     if (state.status === GameStatus.ROUND_ENDED) {
       this.clearTurnTimer();
-      // Complete round scoring if not yet finalized
-      this.controller.completeRound();
+      try {
+        this.controller.completeRound();
+      } catch (err) {
+        console.error('Error completing round scoring:', err);
+      }
       const scoredState = this.store.getState();
       if (scoredState.status === GameStatus.ROUND_ENDED && scoredState.currentRound < scoredState.config.totalRounds) {
         this.scheduleNextRoundAutoTransition(4000);
@@ -359,9 +369,6 @@ export class AuthoritativeGameController {
         }
       }
     }, 1000);
-    if (typeof (this.turnTimerInterval as any)?.unref === 'function') {
-      (this.turnTimerInterval as any).unref();
-    }
   }
 
   /**
@@ -518,14 +525,12 @@ export class AuthoritativeGameController {
       }
 
       this.botTimer = setTimeout(() => {
+        this.botTimer = null;
         const didStep = this.controller.stepBotTurn();
         if (didStep) {
           this.handlePostActionState();
         }
       }, 550);
-      if (typeof (this.botTimer as any)?.unref === 'function') {
-        (this.botTimer as any).unref();
-      }
     }
   }
 
@@ -536,10 +541,15 @@ export class AuthoritativeGameController {
     }
 
     this.botTimer = setTimeout(() => {
+      this.botTimer = null;
       this.controller.resolveTrick();
       const state = this.store.getState();
       if (state.status === GameStatus.ROUND_ENDED) {
-        this.controller.completeRound();
+        try {
+          this.controller.completeRound();
+        } catch (err) {
+          console.error('Error completing round scoring in trick resolution:', err);
+        }
         const scoredState = this.store.getState();
         if (scoredState.status === GameStatus.ROUND_ENDED && scoredState.currentRound < scoredState.config.totalRounds) {
           this.scheduleNextRoundAutoTransition(4000);
@@ -548,9 +558,6 @@ export class AuthoritativeGameController {
         this.advanceTurnOrStepBot();
       }
     }, 1100);
-    if (typeof (this.botTimer as any)?.unref === 'function') {
-      (this.botTimer as any).unref();
-    }
   }
 
   /**
@@ -751,6 +758,46 @@ export class AuthoritativeGameController {
       [PlayerPosition.EAST]: state.cumulativeScores[POSITIONS[(3 + clientIdx) % 4]],
     };
 
+    // Rotate roundScores records so client-side modal scores match perspective player positions
+    const rotatedRoundScores: readonly RoundScoreRecord[] = state.roundScores.map((record) => {
+      const rotatedScores: Record<PlayerPosition, PlayerRoundScore> = {
+        [PlayerPosition.SOUTH]: {
+          ...record.scores[POSITIONS[(0 + clientIdx) % 4]],
+          playerPosition: PlayerPosition.SOUTH,
+        },
+        [PlayerPosition.WEST]: {
+          ...record.scores[POSITIONS[(1 + clientIdx) % 4]],
+          playerPosition: PlayerPosition.WEST,
+        },
+        [PlayerPosition.NORTH]: {
+          ...record.scores[POSITIONS[(2 + clientIdx) % 4]],
+          playerPosition: PlayerPosition.NORTH,
+        },
+        [PlayerPosition.EAST]: {
+          ...record.scores[POSITIONS[(3 + clientIdx) % 4]],
+          playerPosition: PlayerPosition.EAST,
+        },
+      };
+      return {
+        ...record,
+        scores: rotatedScores,
+      };
+    });
+
+    // Rotate matchResult if finalized
+    const rotatedMatchResult: MatchResult | null = state.matchResult
+      ? {
+          ...state.matchResult,
+          winnerPosition: mapPosition(state.matchResult.winnerPosition),
+          winnerPositions: state.matchResult.winnerPositions.map(mapPosition),
+          finalScores: rotatedCumulativeScores,
+          rankings: state.matchResult.rankings.map((r) => ({
+            ...r,
+            position: mapPosition(r.position),
+          })),
+        }
+      : null;
+
     return {
       ...state,
       currentPlayer: mapPosition(state.currentPlayer),
@@ -763,7 +810,9 @@ export class AuthoritativeGameController {
         cards: rotatedTrickCards,
       },
       completedTricks: rotatedCompletedTricks,
+      roundScores: rotatedRoundScores,
       cumulativeScores: rotatedCumulativeScores,
+      matchResult: rotatedMatchResult,
     };
   }
 
