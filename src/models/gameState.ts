@@ -17,8 +17,7 @@ export enum GameStatus {
 
 export enum GameMode {
   OFFLINE_BOTS = 'OFFLINE_BOTS',
-  PASS_AND_PLAY = 'PASS_AND_PLAY',
-  ONLINE_MULTIPLAYER = 'ONLINE_MULTIPLAYER', // For future phases
+  ONLINE_MULTIPLAYER = 'ONLINE_MULTIPLAYER',
 }
 
 export interface PlayedCard {

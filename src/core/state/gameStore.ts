@@ -5,11 +5,10 @@
  * Phase 1 Architecture Foundation
  */
 
-import { GameState } from '../../models/gameState';
+import { GameMode, GameState } from '../../models/gameState';
 import { GameEvent, GameEventListener } from '../../models/events';
 import { IGameStateStore } from '../contracts/IGameStateStore';
 import { createInitialGameState } from './initialState';
-import { sharedActiveGameService } from '../persistence/ActiveGameService';
 
 export class GameStateStore implements IGameStateStore {
   private currentState: GameState;
@@ -97,23 +96,9 @@ export class GameStateStore implements IGameStateStore {
 }
 
 /**
- * Resolves initial state at boot time:
- * Restores existing in-progress match if present and valid; otherwise creates clean IDLE state.
- */
-function getBootGameState(): GameState {
-  try {
-    const saved = sharedActiveGameService.loadActiveGameSync();
-    if (saved) {
-      return saved;
-    }
-  } catch {
-    // Fall back cleanly
-  }
-  return createInitialGameState();
-}
-
-/**
  * Default singleton instance of the store for application lifecycle.
  */
-export const sharedGameStore = new GameStateStore(getBootGameState());
+export const sharedGameStore = new GameStateStore(
+  createInitialGameState(GameMode.ONLINE_MULTIPLAYER)
+);
 

@@ -1,15 +1,15 @@
 /**
  * Home / Lobby Screen Component
- * The central hub for Call Break: New Game, Continue Resumable Game, Match History,
- * Overall Statistics, Rules Guide, Settings, and Interactive Tutorial.
- * Phase 10 Settings & Interactive Tutorial
+ * The central hub for Call Break: Create New Table, Join Existing Table,
+ * Return to Active Live Table, Match History, Statistics, Rules Guide, Settings,
+ * and Interactive Rule Coach.
  */
 
 import React from 'react';
 import { motion } from 'motion/react';
 import {
   Play,
-  RotateCcw,
+  Users,
   BookOpen,
   History,
   BarChart3,
@@ -17,7 +17,8 @@ import {
   Shield,
   UserCheck,
   GraduationCap,
-  Users,
+  PlusCircle,
+  LogIn,
 } from 'lucide-react';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { soundManager } from '../../core/sound/SoundManager';
@@ -25,32 +26,34 @@ import { transitions } from '../../core/animation/animationConfig';
 
 export interface HomeLobbyModalProps {
   isOpen: boolean;
-  onStartNewGame: () => void;
+  onCreateTable: () => void;
+  onJoinTable: () => void;
   onOpenRules: () => void;
   onOpenScorecard: () => void;
   onOpenHistory: () => void;
   onOpenStatistics: () => void;
   onOpenSettings: () => void;
   onOpenTutorial?: () => void;
-  onOpenGameMode?: () => void;
   hasActiveGame?: boolean;
   activeGameRound?: number;
   onResumeGame?: () => void;
+  isConnected: boolean;
 }
 
 export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
   isOpen,
-  onStartNewGame,
+  onCreateTable,
+  onJoinTable,
   onOpenRules,
   onOpenScorecard,
   onOpenHistory,
   onOpenStatistics,
   onOpenSettings,
   onOpenTutorial,
-  onOpenGameMode,
   hasActiveGame = false,
   activeGameRound,
   onResumeGame,
+  isConnected,
 }) => {
   const prefersReducedMotion = useReducedMotion();
 
@@ -88,14 +91,14 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
           </span>
           <span className="text-xs text-stone-400 flex items-center gap-1.5 font-medium">
             <Shield className="w-3.5 h-3.5 text-stone-500" />
-            Standard 5-Round Match
+            Live Online Server Match
           </span>
         </div>
 
         {/* Actions Menu */}
         <div className="w-full space-y-2.5">
-          {/* Continue Game Action */}
-          {hasActiveGame && onResumeGame ? (
+          {/* Active Live Game Return Action */}
+          {hasActiveGame && onResumeGame && (
             <button
               type="button"
               id="btn-lobby-resume-game"
@@ -106,53 +109,50 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
               className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current text-white" />
-              <span>Continue Match {activeGameRound ? `(Round ${activeGameRound})` : ''}</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              id="btn-lobby-resume-disabled"
-              disabled
-              className="w-full py-3 px-4 rounded-xl bg-stone-950/60 text-stone-600 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 border border-stone-800/80 cursor-not-allowed"
-              title="No match currently in progress"
-            >
-              <span>Continue Match (No Active Game)</span>
+              <span>Return to Live Table {activeGameRound ? `(Round ${activeGameRound})` : ''}</span>
             </button>
           )}
 
-          {/* New Game Primary Action */}
+          {/* Connection Warning Banner if offline */}
+          {!isConnected && (
+            <div
+              id="lobby-connection-warning"
+              className="p-2.5 rounded-xl bg-rose-950/60 border border-rose-800/80 text-rose-200 text-xs font-mono text-center flex items-center justify-center gap-2"
+            >
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
+              <span>Connecting to live server... Online required.</span>
+            </div>
+          )}
+
+          {/* 1. Create New Table Action */}
           <button
             type="button"
-            id="btn-lobby-new-game"
+            id="btn-lobby-create-table"
+            disabled={!isConnected}
             onClick={() => {
               soundManager.play('deal');
-              onStartNewGame();
+              onCreateTable();
             }}
-            className={`w-full py-3 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              hasActiveGame
-                ? 'bg-stone-800/90 hover:bg-stone-700/90 text-stone-200 border border-stone-700/90 shadow-sm'
-                : 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white shadow-lg shadow-emerald-600/35 text-base font-extrabold'
-            }`}
+            className="w-full py-3.5 px-4 rounded-xl font-extrabold text-sm sm:text-base flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white shadow-lg shadow-emerald-600/35 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           >
-            <RotateCcw className="w-4 h-4 text-emerald-400" />
-            <span>{hasActiveGame ? 'Start Fresh Match' : 'Play New Game'}</span>
+            <PlusCircle className="w-5 h-5 text-emerald-200" />
+            <span>Create New Table</span>
           </button>
 
-          {/* Game Modes & Play with Friends Action */}
-          {onOpenGameMode && (
-            <button
-              type="button"
-              id="btn-lobby-game-modes"
-              onClick={() => {
-                soundManager.play('click');
-                onOpenGameMode();
-              }}
-              className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:from-amber-700 text-stone-950 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-amber-950/40 transition-all cursor-pointer"
-            >
-              <Users className="w-4 h-4 text-stone-950" />
-              <span>Choose Mode / Play with Friends</span>
-            </button>
-          )}
+          {/* 2. Join Existing Table Action */}
+          <button
+            type="button"
+            id="btn-lobby-join-table"
+            disabled={!isConnected}
+            onClick={() => {
+              soundManager.play('click');
+              onJoinTable();
+            }}
+            className="w-full py-3 px-4 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:from-amber-700 text-stone-950 shadow-md shadow-amber-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+          >
+            <LogIn className="w-4 h-4 text-stone-950" />
+            <span>Join Existing Table</span>
+          </button>
 
           {/* Tutorial Button */}
           {onOpenTutorial && (
@@ -163,7 +163,7 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
                 soundManager.play('click');
                 onOpenTutorial();
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-200 font-semibold text-xs flex items-center justify-center gap-2 border border-emerald-700/60 shadow-xs transition-colors cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl bg-stone-800/80 hover:bg-stone-700/80 text-stone-200 font-semibold text-xs flex items-center justify-center gap-2 border border-stone-700/70 shadow-xs transition-colors cursor-pointer"
             >
               <GraduationCap className="w-4 h-4 text-emerald-400" />
               <span>Interactive Rule Coach / Tutorial</span>
@@ -232,7 +232,7 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
         {/* Footer info */}
         <div className="mt-5 text-[11px] text-stone-400 font-mono flex items-center gap-1.5">
           <UserCheck className="w-3.5 h-3.5 text-emerald-500/80" />
-          <span>Single-player offline table vs West, North, and East</span>
+          <span>Server-Authoritative Live Call Break</span>
         </div>
       </motion.div>
     </div>

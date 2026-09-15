@@ -47,7 +47,6 @@ export interface TableMenuModalProps {
   onLeaveGame: () => void;
   onShareRoom?: () => void;
   onStartNewGame?: () => void;
-  onOpenModes?: () => void;
   onOpenSettings?: () => void;
 }
 
@@ -62,7 +61,6 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
   onLeaveGame,
   onShareRoom,
   onStartNewGame,
-  onOpenModes,
   onOpenSettings,
 }) => {
   const prefersReducedMotion = useReducedMotion();
@@ -312,27 +310,7 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
               <span className="text-[10px] text-stone-400 font-mono">Scores</span>
             </button>
 
-            {/* 5. Game Modes (Play with Friends / Solo) */}
-            {onOpenModes && (
-              <button
-                type="button"
-                id="btn-menu-modes"
-                onClick={() => {
-                  soundManager.play('click');
-                  onClose();
-                  onOpenModes();
-                }}
-                className="w-full py-2.5 px-4 rounded-xl bg-amber-950/40 hover:bg-amber-900/60 text-amber-200 font-bold text-xs border border-amber-800/60 flex items-center justify-between transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Users className="w-4 h-4 text-amber-400" />
-                  <span>Game Modes / Play with Friends</span>
-                </div>
-                <span className="text-[10px] text-amber-400/80 font-mono">Modes</span>
-              </button>
-            )}
-
-            {/* 6. Settings / Preferences */}
+            {/* 5. Settings / Preferences */}
             {onOpenSettings && (
               <button
                 type="button"

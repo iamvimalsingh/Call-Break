@@ -371,7 +371,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
               className="px-2.5 py-1.5 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-300 border border-stone-700/60 flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
-              <span>{hasJoinedRoom ? 'Leave Room' : 'Game Modes'}</span>
+              <span>{hasJoinedRoom ? 'Leave Room' : 'Back to Lobby'}</span>
             </button>
 
             {/* Real Connection State Badge */}

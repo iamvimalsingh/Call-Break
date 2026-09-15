@@ -37,7 +37,6 @@ interface TableTopBarProps {
   onStartNewGame: () => void;
   onOpenTableMenu?: () => void;
   onOpenSettings?: () => void;
-  onOpenModeSelect?: () => void;
   onShareRoom?: () => void;
   onLeaveRoom?: () => void;
 }
@@ -51,7 +50,6 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   onStartNewGame,
   onOpenTableMenu,
   onOpenSettings,
-  onOpenModeSelect,
   onShareRoom,
   onLeaveRoom,
 }) => {
@@ -289,20 +287,6 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
             )}
             <span className="hidden lg:inline font-medium">{isMuted ? 'Muted' : 'Sound'}</span>
           </button>
-
-          {/* Mode / Lobby Trigger */}
-          {onOpenModeSelect && (
-            <button
-              type="button"
-              id="btn-nav-mode"
-              onClick={onOpenModeSelect}
-              className="p-1.5 sm:px-2.5 sm:py-1.5 text-xs rounded-lg sm:rounded-xl bg-amber-950/60 hover:bg-amber-900/70 text-amber-300 border border-amber-800/80 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-              title="Choose Game Mode & Play with Friends"
-            >
-              <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />
-              <span className="font-bold">Modes</span>
-            </button>
-          )}
 
           {onOpenSettings && (
             <button

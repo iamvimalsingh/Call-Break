@@ -63,18 +63,6 @@ export const GameTable: React.FC<GameTableProps> = ({
       : null;
 
   const getPlayerDisplayName = (pos: PlayerPosition, p?: PlayerState): string => {
-    if (state.mode === GameMode.OFFLINE_BOTS) {
-      switch (pos) {
-        case PlayerPosition.SOUTH:
-          return 'You';
-        case PlayerPosition.WEST:
-          return 'West Player';
-        case PlayerPosition.NORTH:
-          return 'North Player';
-        case PlayerPosition.EAST:
-          return 'East Player';
-      }
-    }
     if (!p) {
       switch (pos) {
         case PlayerPosition.SOUTH:
