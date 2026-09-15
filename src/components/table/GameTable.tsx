@@ -4,7 +4,7 @@
  * bidding overlay, and human hand tray.
  * Responsive mobile-first design with dedicated non-overlapping zones.
  * North Player sits visibly above the table felt.
- * West and East player status blocks sit directly below their respective panels.
+ * West and East player status blocks sit directly ABOVE their respective panels.
  * Phase 8 Animations & Sound
  */
 
@@ -156,38 +156,31 @@ export const GameTable: React.FC<GameTableProps> = ({
     return `${top.name}: ${scoreFormatted}`;
   }, [state.cumulativeScores, playerNames]);
 
-  // Turn Action context
-  const actionLine1Text = React.useMemo(() => {
-    if (state.lastActionMessage) {
-      const msg = state.lastActionMessage.trim();
-      const currentTurnName = playerNames[state.currentPlayer] || 'Opponent';
-      if (
-        state.status === GameStatus.PLAYING &&
-        !msg.toLowerCase().includes('turn') &&
-        !msg.toLowerCase().includes('wins') &&
-        !msg.toLowerCase().includes('won')
-      ) {
-        return `${msg}. Turn: ${currentTurnName}`;
-      }
-      return msg;
-    }
+  // Round / Turn status line
+  const roundTurnStatusText = React.useMemo(() => {
     if (state.status === GameStatus.PLAYING) {
-      const currentTurnName = playerNames[state.currentPlayer] || 'Opponent';
-      return `Turn: ${currentTurnName}`;
+      const turnName =
+        state.currentPlayer === PlayerPosition.SOUTH
+          ? 'You'
+          : playerNames[state.currentPlayer] || 'Turn';
+      return `Trk ${trickNumber}/13 • ${turnName}`;
     }
     if (state.status === GameStatus.BIDDING) {
-      const bidderName = playerNames[state.currentPlayer] || 'Opponent';
-      return state.currentPlayer === PlayerPosition.SOUTH ? 'Your Bid' : `Bidding: ${bidderName}`;
+      const bidderName =
+        state.currentPlayer === PlayerPosition.SOUTH
+          ? 'You'
+          : playerNames[state.currentPlayer] || 'Bid';
+      return `Rd ${state.currentRound}/${state.config.totalRounds} • ${bidderName}`;
     }
-    return null;
-  }, [state.lastActionMessage, state.status, state.currentPlayer, playerNames]);
+    return `Rd ${state.currentRound}/${state.config.totalRounds} • Trk ${trickNumber}/13`;
+  }, [state.currentRound, state.config.totalRounds, trickNumber, state.status, state.currentPlayer, playerNames]);
 
   return (
     <div
       id="callbreak-game-table-container"
       className="relative w-full h-full flex-1 flex flex-col items-center justify-between min-h-0 overflow-hidden select-none p-1 sm:p-1.5 gap-0.5"
     >
-      {/* 1. NORTH PLAYER - Positioned visibly ABOVE the table felt with zero clipping */}
+      {/* 1. NORTH PLAYER - Positioned visibly ABOVE the table felt with zero clipping (UNCHANGED) */}
       <div id="zone-north-player" className="w-full flex justify-center z-30 shrink-0">
         <PlayerSlot
           player={northPlayer}
@@ -197,7 +190,7 @@ export const GameTable: React.FC<GameTableProps> = ({
         />
       </div>
 
-      {/* 2. TABLE FELT - Holds West (with status), Center Trick Arena / Bidding, and East (with turn/status) */}
+      {/* 2. TABLE FELT - Holds West (with status ABOVE), Center Trick Arena / Bidding, and East (with status ABOVE) */}
       <motion.div
         id="table-felt"
         initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
@@ -209,26 +202,34 @@ export const GameTable: React.FC<GameTableProps> = ({
         <div className="absolute inset-1 sm:inset-2 rounded-xl sm:rounded-[1.75rem] border border-emerald-400/15 pointer-events-none" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-emerald-500/15 via-emerald-950/20 to-black/60 pointer-events-none rounded-2xl sm:rounded-[2rem]" />
 
-        {/* West Player Column (Left side) with status block directly BELOW */}
+        {/* West Player Column (Left side) with status block directly ABOVE player card */}
         <div id="column-west-player" className="w-auto flex flex-col items-center gap-1 z-10 shrink-0">
+          {/* Status block directly ABOVE West Player card */}
+          <div id="west-status-block" className="flex flex-col items-center text-center gap-0.5 w-[76px] xs:w-[86px] sm:w-[96px] md:w-[104px] pointer-events-none mb-0.5">
+            {/* Line 1: [Trick result / winner message] */}
+            {winnerToastText ? (
+              <div className="px-1 py-0.5 rounded bg-amber-950/90 border border-amber-500/70 text-amber-200 text-[7.5px] xs:text-[8px] sm:text-[9px] font-bold shadow-xs leading-tight line-clamp-2 text-center w-full">
+                🏆 {winnerToastText}
+              </div>
+            ) : leaderScoreText ? (
+              <div className="px-1 py-0.5 rounded bg-stone-950/80 border border-amber-500/30 text-amber-300 text-[7.5px] xs:text-[8px] sm:text-[9px] font-medium shadow-xs leading-tight line-clamp-2 text-center w-full">
+                👑 {leaderScoreText}
+              </div>
+            ) : null}
+
+            {/* Line 2: [Round/Trick/Turn status] */}
+            <div className="px-1 py-0.5 rounded bg-stone-950/80 border border-emerald-500/30 text-emerald-300 text-[7.5px] xs:text-[8px] sm:text-[9px] font-mono font-bold shadow-xs leading-tight text-center w-full">
+              📍 {roundTurnStatusText}
+            </div>
+          </div>
+
+          {/* West Player Card */}
           <PlayerSlot
             player={westPlayer}
             position={PlayerPosition.WEST}
             isCurrentTurn={state.currentPlayer === PlayerPosition.WEST}
             timer={turnTimer && turnTimer.position === PlayerPosition.WEST ? turnTimer : null}
           />
-          {/* Contextual status below West Player */}
-          <div id="west-status-block" className="flex flex-col items-center text-center gap-0.5 max-w-[115px] xs:max-w-[130px] sm:max-w-[150px] pointer-events-none">
-            {winnerToastText ? (
-              <div className="px-1.5 py-0.5 rounded bg-amber-950/90 border border-amber-500/70 text-amber-200 text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-bold shadow-xs leading-tight line-clamp-2">
-                🏆 {winnerToastText}
-              </div>
-            ) : leaderScoreText ? (
-              <div className="px-1.5 py-0.5 rounded bg-stone-950/80 border border-amber-500/30 text-amber-300 text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-medium shadow-xs leading-tight line-clamp-2">
-                👑 {leaderScoreText}
-              </div>
-            ) : null}
-          </div>
         </div>
 
         {/* Center Trick Arena / Bidding Controls */}
@@ -274,31 +275,38 @@ export const GameTable: React.FC<GameTableProps> = ({
           </AnimatePresence>
         </div>
 
-        {/* East Player Column (Right side) with turn/status block directly BELOW */}
+        {/* East Player Column (Right side) with status block directly ABOVE player card */}
         <div id="column-east-player" className="w-auto flex flex-col items-center gap-1 z-10 shrink-0">
+          {/* Status block directly ABOVE East Player card */}
+          <div id="east-status-block" className="flex flex-col items-center text-center gap-0.5 w-[76px] xs:w-[86px] sm:w-[96px] md:w-[104px] pointer-events-none mb-0.5">
+            {/* Line 1: [Trick result / winner message] */}
+            {winnerToastText ? (
+              <div className="px-1 py-0.5 rounded bg-amber-950/90 border border-amber-500/70 text-amber-200 text-[7.5px] xs:text-[8px] sm:text-[9px] font-bold shadow-xs leading-tight line-clamp-2 text-center w-full">
+                🏆 {winnerToastText}
+              </div>
+            ) : leaderScoreText ? (
+              <div className="px-1 py-0.5 rounded bg-stone-950/80 border border-amber-500/30 text-amber-300 text-[7.5px] xs:text-[8px] sm:text-[9px] font-medium shadow-xs leading-tight line-clamp-2 text-center w-full">
+                👑 {leaderScoreText}
+              </div>
+            ) : null}
+
+            {/* Line 2: [Round/Trick/Turn status] */}
+            <div className="px-1 py-0.5 rounded bg-stone-950/80 border border-emerald-500/30 text-emerald-300 text-[7.5px] xs:text-[8px] sm:text-[9px] font-mono font-bold shadow-xs leading-tight text-center w-full">
+              📍 {roundTurnStatusText}
+            </div>
+          </div>
+
+          {/* East Player Card */}
           <PlayerSlot
             player={eastPlayer}
             position={PlayerPosition.EAST}
             isCurrentTurn={state.currentPlayer === PlayerPosition.EAST}
             timer={turnTimer && turnTimer.position === PlayerPosition.EAST ? turnTimer : null}
           />
-          {/* Turn / Round status below East Player */}
-          <div id="east-status-block" className="flex flex-col items-center text-center gap-0.5 max-w-[115px] xs:max-w-[130px] sm:max-w-[150px] pointer-events-none">
-            {/* Line 1: Round & Trick */}
-            <div className="px-1.5 py-0.5 rounded bg-stone-950/80 border border-emerald-500/30 text-emerald-300 text-[8.5px] xs:text-[9.5px] sm:text-[10px] font-mono font-bold shadow-xs leading-tight whitespace-nowrap">
-              📍 Rd {state.currentRound}/{state.config.totalRounds} • Trk {trickNumber}/13
-            </div>
-            {/* Line 2: Turn / Action info */}
-            {actionLine1Text ? (
-              <div className="px-1.5 py-0.5 rounded bg-stone-950/80 border border-stone-700/80 text-stone-200 text-[8px] xs:text-[9px] sm:text-[9.5px] font-mono shadow-xs leading-tight line-clamp-2">
-                {actionLine1Text}
-              </div>
-            ) : null}
-          </div>
         </div>
       </motion.div>
 
-      {/* 3. YOU SECTION & CARD HAND (Dedicated clear area, zero overlay) */}
+      {/* 3. YOU SECTION & CARD HAND (Dedicated clear area, zero overlay) (UNCHANGED) */}
       <div id="zone-south-container" className="w-full flex flex-col items-center z-20 shrink-0 overflow-visible">
         {/* South Player Badge with Turn state anchored */}
         <div className="mb-0.5 shrink-0">

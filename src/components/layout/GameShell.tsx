@@ -132,6 +132,8 @@ export const GameShell: React.FC = () => {
 
   // Subscribe to real-time multiplayer server events
   useEffect(() => {
+    sharedMultiplayerClient.connect().catch(() => {});
+
     const unsubState = sharedMultiplayerClient.onGameState(({ state }) => {
       sharedGameStore.setState(() => state);
     });

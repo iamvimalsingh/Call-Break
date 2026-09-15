@@ -42,25 +42,80 @@ export type PlayerDisconnectedListener = (data: {
 export type JoinRequestListener = (payload: JoinRequestPayload) => void;
 export type JoinRequestStatusListener = (payload: JoinRequestStatusPayload) => void;
 
-/**
- * Cleans and sanitizes WebSocket URLs by stripping markdown brackets, parentheses,
- * duplicate URLs, and extracting pure domains.
- *
- * Example: "[https://call-break-778p.onrender.com](https://call-break-778p.onrender.com)"
- * resolves cleanly to "wss://call-break-778p.onrender.com/ws".
- */
-export function cleanAndSanitizeWebSocketUrl(rawUrl?: string): string {
-  const defaultFallback = 'wss://call-break-778p.onrender.com/ws';
+const PLAYER_ID_STORAGE_KEY = 'cb_player_id';
 
-  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
-    if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      try {
-        return window.location.origin.replace(/^http/, 'ws') + '/ws';
-      } catch {
-        return defaultFallback;
+/**
+ * Returns the stable persistent player ID from localStorage (cb_player_id),
+ * generating and persisting a new UUID if one does not exist yet.
+ */
+export function getOrCreatePersistentPlayerId(): string {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const existing = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+      if (existing && existing.trim().length > 0) {
+        return existing.trim();
       }
     }
-    return defaultFallback;
+  } catch {
+    // localStorage may throw in restricted sandboxed iframes
+  }
+
+  let newId: string;
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    newId = crypto.randomUUID();
+  } else {
+    newId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(PLAYER_ID_STORAGE_KEY, newId);
+    }
+  } catch {
+    // ignore
+  }
+
+  return newId;
+}
+
+/**
+ * Resolves the WebSocket URL based on the active application host.
+ * Converts http/https origin to ws/wss and appends /ws path.
+ */
+export function getActiveHostWebSocketUrl(): string {
+  if (typeof window !== 'undefined' && window.location) {
+    try {
+      const origin = window.location.origin;
+      if (origin && origin.startsWith('http')) {
+        return origin.replace(/^http/, 'ws') + '/ws';
+      }
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      if (host) {
+        return `${protocol}//${host}/ws`;
+      }
+    } catch {
+      // fallback
+    }
+  }
+  return 'ws://localhost:3000/ws';
+}
+
+/**
+ * Cleans and sanitizes WebSocket URLs.
+ * When VITE_WS_URL is not provided: prefers active host (window.location.origin -> ws/wss + /ws).
+ * Does NOT default to the old external Render URL.
+ * Uses explicit VITE_WS_URL when it is provided.
+ */
+export function cleanAndSanitizeWebSocketUrl(rawUrl?: string): string {
+  const activeHostFallback = getActiveHostWebSocketUrl();
+
+  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    return activeHostFallback;
   }
 
   try {
@@ -88,20 +143,15 @@ export function cleanAndSanitizeWebSocketUrl(rawUrl?: string): string {
     const domain = (pathIndex !== -1 ? cleaned.substring(0, pathIndex) : cleaned).trim();
 
     if (!domain) {
-      return defaultFallback;
-    }
-
-    // Special case for CallBreak Render backend host
-    if (domain.includes('call-break-778p')) {
-      return 'wss://call-break-778p.onrender.com/ws';
+      return activeHostFallback;
     }
 
     const isLocal = domain.includes('localhost') || domain.includes('127.0.0.1');
     const scheme = isLocal ? 'ws://' : 'wss://';
     return `${scheme}${domain}/ws`;
   } catch (err) {
-    console.error('[WebSocket] Error sanitizing URL, falling back safely to default:', err);
-    return defaultFallback;
+    console.error('[WebSocket] Error sanitizing URL, falling back safely to active host:', err);
+    return activeHostFallback;
   }
 }
 
@@ -112,9 +162,13 @@ export class MultiplayerClient {
   private isConnecting: boolean = false;
   private pendingQueue: ClientMessage[] = [];
 
+  private playerId: string = getOrCreatePersistentPlayerId();
   private connectionState: ConnectionState = 'CLOSED';
   private connectionError: string | null = null;
   private connectionStateListeners: Set<ConnectionStateListener> = new Set();
+  private reconnectAttempts: number = 0;
+  private reconnectTimer: any = null;
+  private isManualDisconnect: boolean = false;
 
   private roomStateListeners: Set<RoomStateListener> = new Set();
   private gameStateListeners: Set<GameStateListener> = new Set();
@@ -133,6 +187,10 @@ export class MultiplayerClient {
       MultiplayerClient.instance = new MultiplayerClient();
     }
     return MultiplayerClient.instance;
+  }
+
+  public getPlayerId(): string {
+    return this.playerId;
   }
 
   public isConnected(): boolean {
@@ -174,8 +232,17 @@ export class MultiplayerClient {
   }
 
   public connect(): Promise<void> {
+    this.isManualDisconnect = false;
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.isConnected()) {
-      this.setConnectionState('OPEN', null);
+      if (this.connectionState !== 'OPEN') {
+        this.setConnectionState('OPEN', null);
+      }
       return Promise.resolve();
     }
 
@@ -206,6 +273,7 @@ export class MultiplayerClient {
         }
         this.isConnecting = false;
         if (finalState === 'OPEN') {
+          this.reconnectAttempts = 0;
           this.setConnectionState('OPEN', null);
         } else {
           this.socket = null;
@@ -239,6 +307,7 @@ export class MultiplayerClient {
         ws.onopen = (event) => {
           console.log(`[WebSocket] onopen: Connected successfully to ${wsUrl}`, event);
           this.socket = ws;
+          this.reconnectAttempts = 0;
           // Flush pending queue
           while (this.pendingQueue.length > 0) {
             const msg = this.pendingQueue.shift();
@@ -265,6 +334,15 @@ export class MultiplayerClient {
               : `Server connection closed (code: ${event.code})`);
           console.warn(`[WebSocket] onclose: code=${event.code}, reason=${reason}`);
           finish('CLOSED', reason);
+
+          // Automatic reconnect with backoff when disconnected unexpectedly
+          if (!this.isManualDisconnect) {
+            const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
+            this.reconnectAttempts++;
+            this.reconnectTimer = setTimeout(() => {
+              this.connect().catch(() => {});
+            }, delay);
+          }
         };
       } catch (err: any) {
         console.warn('[WebSocket] Exception during connect() handled safely:', err);
@@ -274,6 +352,12 @@ export class MultiplayerClient {
   }
 
   public disconnect(): void {
+    this.isManualDisconnect = true;
+    this.reconnectAttempts = 0;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.socket) {
       try {
         this.send({ type: 'LEAVE_ROOM' });
@@ -295,7 +379,9 @@ export class MultiplayerClient {
         console.warn('[WebSocket] Send failed gracefully:', err);
       }
     } else {
-      this.pendingQueue.push(message);
+      if (message.type !== 'CREATE_ROOM' && message.type !== 'JOIN_ROOM') {
+        this.pendingQueue.push(message);
+      }
       this.connect().catch((err) => {
         console.warn('[WebSocket] Auto-connect note:', err);
       });
@@ -378,18 +464,38 @@ export class MultiplayerClient {
   }
 
   // Room Actions
-  public createRoom(playerName: string = 'Host', roomCode?: string, totalRounds: number = 5): void {
+  public createRoom(playerName: string = 'Host', roomCode?: string, totalRounds: number = 5): boolean {
+    if (this.getConnectionState() !== 'OPEN') {
+      console.warn('[MultiplayerClient] Cannot create table: WebSocket connection is not OPEN.');
+      this.errorListeners.forEach((fn) => {
+        try {
+          fn({ message: 'Cannot create table: Server connection is offline or reconnecting.', code: 'CONNECTION_NOT_OPEN' });
+        } catch {}
+      });
+      return false;
+    }
     this.send({
       type: 'CREATE_ROOM',
-      payload: { playerName, roomCode, totalRounds },
+      payload: { playerName, roomCode, totalRounds, playerId: this.playerId },
     });
+    return true;
   }
 
-  public joinRoom(roomCode: string, playerName: string = 'Guest'): void {
+  public joinRoom(roomCode: string, playerName: string = 'Guest'): boolean {
+    if (this.getConnectionState() !== 'OPEN') {
+      console.warn('[MultiplayerClient] Cannot join table: WebSocket connection is not OPEN.');
+      this.errorListeners.forEach((fn) => {
+        try {
+          fn({ message: 'Cannot join table: Server connection is offline or reconnecting.', code: 'CONNECTION_NOT_OPEN' });
+        } catch {}
+      });
+      return false;
+    }
     this.send({
       type: 'JOIN_ROOM',
-      payload: { roomCode, playerName },
+      payload: { roomCode, playerName, playerId: this.playerId },
     });
+    return true;
   }
 
   public respondJoinRequest(requestId: string, accept: boolean, targetSeat?: PlayerPosition): void {

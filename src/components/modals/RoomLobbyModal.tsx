@@ -204,7 +204,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    if (activeTab === 'create' && !hasJoinedRoom) {
+    if (activeTab === 'create' && !hasJoinedRoom && connectionState === 'OPEN') {
       const effectiveHost = playerName.trim() || 'Host (Player 1)';
       sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
     }
@@ -285,6 +285,11 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
   const handleJoinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (connectionState !== 'OPEN') {
+      setJoinError('Cannot join table: Server connection is offline or reconnecting.');
+      soundManager.play('warning');
+      return;
+    }
     const clean = joinInputCode.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (clean.length < 4) {
       setJoinError('Please enter a valid 6-digit room code');
@@ -298,6 +303,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   };
 
   const handleStartCreatedRoom = () => {
+    if (connectionState !== 'OPEN') return;
     soundManager.play('deal');
     sharedMultiplayerClient.startMatch(autoFillBots, totalRounds);
   };
@@ -1032,8 +1038,8 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
               <button
                 type="submit"
                 id="btn-submit-join-room"
-                disabled={isJoining}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:from-amber-700 text-stone-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-950/60 transition-all cursor-pointer disabled:opacity-50"
+                disabled={isJoining || connectionState !== 'OPEN'}
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:from-amber-700 text-stone-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-950/60 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isJoining ? (
                   <>

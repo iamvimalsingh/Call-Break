@@ -68,8 +68,8 @@ export interface JoinRequestStatusPayload {
 }
 
 export type ClientMessage =
-  | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string; totalRounds?: number } }
-  | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string } }
+  | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string; totalRounds?: number; playerId?: string } }
+  | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string; playerId?: string } }
   | { type: 'RESPOND_JOIN_REQUEST'; payload: { requestId: string; accept: boolean; targetSeat?: PlayerPosition } }
   | { type: 'CONVERT_TO_BOT'; payload: { seat: PlayerPosition } }
   | { type: 'START_MATCH'; payload?: { autoFillBots?: boolean; totalRounds?: number } }

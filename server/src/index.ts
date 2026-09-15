@@ -45,7 +45,7 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
   });
 
   wss.on('connection', (socket: WebSocket, req) => {
-    const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    let clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     console.log(`[WebSocket] Client connected: ${clientId} from ${req.socket.remoteAddress}`);
 
     // Heartbeat setup
@@ -61,7 +61,10 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 
         switch (msg.type) {
           case 'CREATE_ROOM': {
-            const { roomCode, playerName, totalRounds } = msg.payload || {};
+            const { roomCode, playerName, totalRounds, playerId } = (msg.payload as any) || {};
+            if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
+              clientId = playerId.trim();
+            }
             const room = roomManager.createRoom(
               clientId,
               playerName || 'Host',
@@ -76,7 +79,10 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
           }
 
           case 'JOIN_ROOM': {
-            const { roomCode, playerName } = msg.payload;
+            const { roomCode, playerName, playerId } = msg.payload as any;
+            if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
+              clientId = playerId.trim();
+            }
             const result = roomManager.joinRoom(
               roomCode,
               clientId,
