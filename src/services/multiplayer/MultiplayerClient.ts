@@ -634,6 +634,20 @@ export class MultiplayerClient {
     });
   }
 
+  public kickPlayer(seat: PlayerPosition): void {
+    this.send({
+      type: 'KICK_PLAYER',
+      payload: { seat },
+    });
+  }
+
+  public swapSeats(seatA: PlayerPosition, seatB: PlayerPosition): void {
+    this.send({
+      type: 'SWAP_SEATS',
+      payload: { seatA, seatB },
+    });
+  }
+
   public startMatch(autoFillBots: boolean = true, totalRounds: number = 5): void {
     this.send({
       type: 'START_MATCH',

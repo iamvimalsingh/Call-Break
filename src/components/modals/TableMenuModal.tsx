@@ -2,14 +2,15 @@
  * Table Menu Modal (☰)
  * Sleek, semi-transparent in-table drawer / modal providing fast access to:
  * - Resume Game
+ * - Host Controls (Human → Bot, Transfer Host, Swap Seats, Rename Seat)
+ * - Seat & Player Roster with Scores & Live Connection Status
  * - Sound & Haptic Toggle
  * - Call Break Rules Summary
  * - Scoreboard / Overview
  * - Leave Game (with exit guard)
- * Inspired by commercial Call Break benchmarks (Teslatech).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Play,
@@ -21,18 +22,22 @@ import {
   LogOut,
   X,
   Share2,
-  ShieldAlert,
-  Smartphone,
   RotateCcw,
   Users,
   Settings,
   Crown,
+  Bot,
+  UserX,
+  ArrowLeftRight,
+  Edit2,
+  Check,
 } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useSound } from '../../core/sound/useSound';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
 import { GameState } from '../../models/gameState';
+import { PlayerPosition, POSITION_ORDER } from '../../models/player';
 import { SUIT_CONFIG } from '../../models/card';
 import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
 
@@ -67,9 +72,9 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
   const { isMuted, toggleMute } = useSound();
 
   const roomState = sharedMultiplayerClient.getRoomState();
-  const otherHumanParticipants = roomState
-    ? roomState.players.filter((p) => !p.isBot && p.id !== roomState.myClientId)
-    : [];
+  const [editingSeat, setEditingSeat] = useState<PlayerPosition | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
+  const [swapSourceSeat, setSwapSourceSeat] = useState<PlayerPosition | null>(null);
 
   // Haptic feedback state
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(() => {
@@ -96,6 +101,24 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
     soundManager.play('click');
   };
 
+  const handleSaveRename = (seat: PlayerPosition) => {
+    if (editingName.trim()) {
+      sharedMultiplayerClient.renameSeat(seat, editingName.trim());
+      soundManager.play('click');
+    }
+    setEditingSeat(null);
+  };
+
+  const handleSwapWith = (targetSeat: PlayerPosition) => {
+    if (!swapSourceSeat || swapSourceSeat === targetSeat) {
+      setSwapSourceSeat(null);
+      return;
+    }
+    soundManager.play('cardPlay');
+    sharedMultiplayerClient.swapSeats(swapSourceSeat, targetSeat);
+    setSwapSourceSeat(null);
+  };
+
   const trumpInfo = SUIT_CONFIG[gameState.config.trumpSuit];
 
   if (!isOpen) return null;
@@ -114,19 +137,19 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }}
           transition={transitions.springFast}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-sm bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-stone-700/80 rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.85)] p-5 flex flex-col relative overflow-hidden ring-1 ring-white/10"
+          className="w-full max-w-md bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-stone-700/80 rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.85)] p-5 flex flex-col relative overflow-hidden ring-1 ring-white/10 max-h-[92vh] overflow-y-auto"
         >
           {/* Subtle Ambient Glow */}
           <div className="absolute -top-12 -right-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
 
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 border-b border-stone-800/80 mb-4">
+          <div className="flex items-center justify-between pb-3 border-b border-stone-800/80 mb-3">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-xl bg-emerald-900/60 border border-emerald-500/40 flex items-center justify-center text-amber-300 font-serif text-sm shadow-sm">
                 ♠
               </div>
               <div>
-                <h2 className="text-base font-black text-white tracking-tight">Game Menu</h2>
+                <h2 className="text-base font-black text-white tracking-tight">Table Menu</h2>
                 <div className="flex items-center gap-1.5 text-[11px] text-stone-400 font-mono">
                   <span>Round {gameState.currentRound}/{gameState.config.totalRounds}</span>
                   <span>•</span>
@@ -152,7 +175,7 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
 
           {/* Multiplayer Room Badge & Invite (if room code exists) */}
           {roomCode && (
-            <div className="mb-4 p-3 rounded-2xl bg-stone-950/80 border border-amber-900/50 flex items-center justify-between shadow-inner">
+            <div className="mb-3 p-3 rounded-2xl bg-stone-950/80 border border-amber-900/50 flex items-center justify-between shadow-inner">
               <div className="text-left">
                 <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 font-bold block">
                   Room Code
@@ -178,9 +201,8 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
             </div>
           )}
 
-          {/* Primary Actions List */}
-          <div className="space-y-2 mb-4">
-            {/* 1. Resume Game (Prominent CTA) */}
+          {/* Primary Action: Resume Game */}
+          <div className="mb-3">
             <button
               type="button"
               id="btn-menu-resume"
@@ -188,93 +210,237 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
                 soundManager.play('click');
                 onClose();
               }}
-              className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer transition-all"
+              className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer transition-all"
             >
               <Play className="w-4 h-4 fill-white" />
               <span>Resume Game</span>
             </button>
+          </div>
 
-            {/* Host Administrative Controls */}
-            {isHost && roomCode && (
-              <div id="host-controls-section" className="p-3 rounded-2xl bg-amber-950/40 border border-amber-800/50 text-left">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <Crown className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span className="text-[11px] font-bold text-amber-300 uppercase font-mono tracking-wider">
-                    Host Controls • Transfer Host Role
-                  </span>
-                </div>
-                <div className="space-y-1.5">
-                  {otherHumanParticipants.length > 0 ? (
-                    otherHumanParticipants.map((participant) => (
-                      <div
-                        key={participant.id}
-                        className="flex items-center justify-between p-2 rounded-xl bg-stone-900/90 border border-stone-800 text-xs"
-                      >
-                        <span className="font-bold text-stone-200 truncate max-w-[140px]">
-                          {participant.name.replace(/\s*\(You\)$/i, '').replace(/\s*\(Host\)$/i, '')} ({participant.position})
-                        </span>
-                        <button
-                          type="button"
-                          id={`btn-transfer-host-menu-${participant.position}`}
-                          onClick={() => {
-                            soundManager.play('click');
-                            sharedMultiplayerClient.transferHost(participant.position, participant.id);
-                            onClose();
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
-                        >
-                          <Crown className="w-3 h-3" />
-                          <span>Transfer Host</span>
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-[10px] text-stone-400 italic">
-                      No other connected human players to transfer host role to.
-                    </p>
-                  )}
-                </div>
+          {/* Table Seats & Players Roster */}
+          <div className="mb-3 p-3 rounded-2xl bg-stone-950/60 border border-stone-800/90 text-left">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-[11px] font-bold text-stone-300 uppercase font-mono tracking-wider">
+                  Table Seats & Scores
+                </span>
+              </div>
+              {isHost && (
+                <span className="text-[10px] font-bold text-amber-400 bg-amber-950/60 border border-amber-800/60 px-1.5 py-0.5 rounded-md">
+                  Host Controls Active
+                </span>
+              )}
+            </div>
+
+            {swapSourceSeat && (
+              <div className="mb-2 p-2 rounded-xl bg-amber-950/60 border border-amber-600 text-xs text-amber-200 flex items-center justify-between">
+                <span>Select target seat to swap with <strong>{swapSourceSeat}</strong>:</span>
+                <button
+                  type="button"
+                  onClick={() => setSwapSourceSeat(null)}
+                  className="px-2 py-0.5 rounded bg-stone-800 text-stone-300 hover:text-white text-[10px]"
+                >
+                  Cancel
+                </button>
               </div>
             )}
 
-            {/* 2. Sound & Haptic Controls */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              {/* Sound Toggle */}
+            <div className="space-y-2">
+              {POSITION_ORDER.map((pos) => {
+                const participant = roomState?.players.find((p) => p.position === pos);
+                const playerState = gameState.players[pos];
+                const score = gameState.cumulativeScores[pos] ?? 0;
+                const isMe = roomState ? participant?.id === roomState.myClientId : pos === PlayerPosition.SOUTH;
+                const isSeatHost = participant?.isHost || (roomState && participant?.id === roomState.hostId);
+                const isBot = participant ? participant.isBot : playerState?.type === 'BOT';
+                const seatName = participant?.name || playerState?.name || `Player ${pos}`;
+                const cleanName = seatName
+                  .replace(/\s*\(You\)$/i, '')
+                  .replace(/\s*\(Host\)$/i, '')
+                  .replace(/\s*\(Bot\)$/i, '')
+                  .trim();
+
+                const isEditing = editingSeat === pos;
+
+                return (
+                  <div
+                    key={pos}
+                    className={`p-2.5 rounded-xl border text-xs transition-all ${
+                      swapSourceSeat === pos
+                        ? 'bg-amber-950/40 border-amber-500 ring-1 ring-amber-500'
+                        : isMe
+                        ? 'bg-emerald-950/30 border-emerald-800/80'
+                        : 'bg-stone-900/80 border-stone-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="w-5 h-5 rounded-md bg-stone-800 border border-stone-700 text-[10px] font-mono font-bold flex items-center justify-center text-stone-300 shrink-0">
+                          {pos.charAt(0)}
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          {isEditing ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={editingName}
+                                onChange={(e) => setEditingName(e.target.value)}
+                                className="px-2 py-0.5 rounded bg-stone-800 border border-stone-600 text-white text-xs w-28 focus:outline-hidden focus:border-emerald-500"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleSaveRename(pos);
+                                  if (e.key === 'Escape') setEditingSeat(null);
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveRename(pos)}
+                                className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500"
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-stone-200 truncate max-w-[120px]">
+                                {cleanName}
+                              </span>
+                              {isSeatHost && (
+                                <span className="text-[10px] font-extrabold text-amber-400 flex items-center gap-0.5 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-800/60">
+                                  <Crown className="w-2.5 h-2.5" /> Host
+                                </span>
+                              )}
+                              {isMe && (
+                                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-800/60">
+                                  You
+                                </span>
+                              )}
+                              {isBot && (
+                                <span className="text-[10px] font-bold text-stone-400 bg-stone-800 px-1 py-0.2 rounded flex items-center gap-0.5">
+                                  <Bot className="w-2.5 h-2.5" /> Bot
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <span className="text-[10px] text-stone-400 font-mono">
+                            {pos} • Score: <strong className={score >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{score.toFixed(1)}</strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Seat Action Buttons for Host */}
+                      {isHost && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          {swapSourceSeat ? (
+                            swapSourceSeat !== pos && (
+                              <button
+                                type="button"
+                                onClick={() => handleSwapWith(pos)}
+                                className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[10px] cursor-pointer"
+                              >
+                                Swap Here
+                              </button>
+                            )
+                          ) : (
+                            <>
+                              {/* Rename Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingSeat(pos);
+                                  setEditingName(cleanName);
+                                }}
+                                className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white"
+                                title="Rename seat"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+
+                              {/* Swap Position Button */}
+                              <button
+                                type="button"
+                                onClick={() => setSwapSourceSeat(pos)}
+                                className="p-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white"
+                                title="Swap seat position"
+                              >
+                                <ArrowLeftRight className="w-3 h-3" />
+                              </button>
+
+                              {/* If connected human (not host), allow Host to convert to Bot or transfer Host */}
+                              {!isBot && !isSeatHost && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      soundManager.play('click');
+                                      sharedMultiplayerClient.transferHost(pos, participant?.id);
+                                    }}
+                                    className="p-1 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-300"
+                                    title="Make Host"
+                                  >
+                                    <Crown className="w-3 h-3" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      soundManager.play('warning');
+                                      sharedMultiplayerClient.convertToBot(pos);
+                                    }}
+                                    className="p-1 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-300"
+                                    title="Convert Human to Bot"
+                                  >
+                                    <UserX className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Utility Options List */}
+          <div className="space-y-2 mb-3">
+            {/* Sound & Haptic Controls */}
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 id="btn-menu-sound-toggle"
                 onClick={toggleMute}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                   isMuted
-                    ? 'bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border-rose-800/80 shadow-xs'
-                    : 'bg-stone-800/90 hover:bg-stone-700 text-emerald-300 border-stone-700/80 shadow-xs'
+                    ? 'bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border-rose-800/80'
+                    : 'bg-stone-800/90 hover:bg-stone-700 text-emerald-300 border-stone-700/80'
                 }`}
               >
-                {isMuted ? (
-                  <VolumeX className="w-4 h-4 text-rose-400" />
-                ) : (
-                  <Volume2 className="w-4 h-4 text-emerald-400" />
-                )}
+                {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
                 <span>{isMuted ? 'Sound: Off' : 'Sound: On'}</span>
               </button>
 
-              {/* Haptic Toggle */}
               <button
                 type="button"
                 id="btn-menu-haptic-toggle"
                 onClick={toggleHaptics}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                   hapticsEnabled
-                    ? 'bg-stone-800/90 hover:bg-stone-700 text-emerald-300 border-stone-700/80 shadow-xs'
-                    : 'bg-stone-900/80 hover:bg-stone-800 text-stone-400 border-stone-800 shadow-xs'
+                    ? 'bg-stone-800/90 hover:bg-stone-700 text-emerald-300 border-stone-700/80'
+                    : 'bg-stone-900/80 hover:bg-stone-800 text-stone-400 border-stone-800'
                 }`}
               >
-                <Vibrate className={`w-4 h-4 ${hapticsEnabled ? 'text-emerald-400' : 'text-stone-500'}`} />
+                <Vibrate className={`w-3.5 h-3.5 ${hapticsEnabled ? 'text-emerald-400' : 'text-stone-500'}`} />
                 <span>{hapticsEnabled ? 'Haptics: On' : 'Haptics: Off'}</span>
               </button>
             </div>
 
-            {/* 3. Call Break Rules Summary */}
+            {/* Call Break Rules Summary */}
             <button
               type="button"
               id="btn-menu-rules"
@@ -283,16 +449,16 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
                 onClose();
                 onOpenRules();
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-200 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
+              className="w-full py-2 px-3 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-200 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
             >
-              <div className="flex items-center gap-2.5">
-                <BookOpen className="w-4 h-4 text-amber-400" />
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                 <span>Call Break Rules Summary</span>
               </div>
               <span className="text-[10px] text-stone-400 font-mono">Guide</span>
             </button>
 
-            {/* 4. Scoreboard */}
+            {/* Scoreboard */}
             <button
               type="button"
               id="btn-menu-scoreboard"
@@ -301,16 +467,16 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
                 onClose();
                 onOpenScoreboard();
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-200 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
+              className="w-full py-2 px-3 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-200 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
             >
-              <div className="flex items-center gap-2.5">
-                <Trophy className="w-4 h-4 text-emerald-400" />
+              <div className="flex items-center gap-2">
+                <Trophy className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Scoreboard & Round History</span>
               </div>
               <span className="text-[10px] text-stone-400 font-mono">Scores</span>
             </button>
 
-            {/* 5. Settings / Preferences */}
+            {/* Settings */}
             {onOpenSettings && (
               <button
                 type="button"
@@ -320,18 +486,18 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
                   onClose();
                   onOpenSettings();
                 }}
-                className="w-full py-2.5 px-4 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-200 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
+                className="w-full py-2 px-3 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-stone-200 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
               >
-                <div className="flex items-center gap-2.5">
-                  <Settings className="w-4 h-4 text-stone-300" />
-                  <span>Game Settings & Preferences</span>
+                <div className="flex items-center gap-2">
+                  <Settings className="w-3.5 h-3.5 text-stone-300" />
+                  <span>Settings & Preferences</span>
                 </div>
                 <span className="text-[10px] text-stone-400 font-mono">Config</span>
               </button>
             )}
 
-            {/* 7. Start New Match */}
-            {onStartNewGame && (
+            {/* Start New Match (Host Only in Multiplayer, or all in Local) */}
+            {onStartNewGame && (!roomCode || isHost) && (
               <button
                 type="button"
                 id="btn-menu-new-game"
@@ -340,10 +506,10 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
                   onClose();
                   onStartNewGame();
                 }}
-                className="w-full py-2.5 px-4 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-emerald-300 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
+                className="w-full py-2 px-3 rounded-xl bg-stone-800/80 hover:bg-stone-700 text-emerald-300 font-bold text-xs border border-stone-700/80 flex items-center justify-between transition-colors cursor-pointer"
               >
-                <div className="flex items-center gap-2.5">
-                  <RotateCcw className="w-4 h-4 text-emerald-400" />
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Start New Match</span>
                 </div>
                 <span className="text-[10px] text-emerald-400/80 font-mono">Restart</span>
@@ -351,9 +517,8 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
             )}
           </div>
 
-          {/* Divider */}
-          <div className="border-t border-stone-800/80 my-1 pt-3">
-            {/* 5. Destructive Leave Game Button */}
+          {/* Leave Game Button */}
+          <div className="border-t border-stone-800/80 pt-2">
             <button
               type="button"
               id="btn-menu-leave-game"

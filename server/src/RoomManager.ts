@@ -903,11 +903,37 @@ export class GameRoom {
       return { success: false, error: 'Player seat not found.' };
     }
 
+    // Host cannot convert themselves to a bot unless they transfer host first
+    if (participant.id === hostClientId || participant.isHost) {
+      return { success: false, error: 'Host cannot convert their own seat to a bot. Transfer host role first.' };
+    }
+
     // Clear disconnected seat reservation
     this.clearSeatReservation(seat);
 
+    // If a human player is currently connected on this seat, notify and detach them
+    if (!participant.isBot && this.clientSockets.has(participant.id)) {
+      const targetSocket = this.clientSockets.get(participant.id);
+      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+        try {
+          targetSocket.send(
+            JSON.stringify({
+              type: 'TOAST_NOTIFICATION',
+              payload: {
+                message: 'The table host converted your seat to an AI Bot.',
+                type: 'warning',
+              },
+            })
+          );
+        } catch {}
+      }
+      this.clientPositions.delete(participant.id);
+      this.clientSockets.delete(participant.id);
+    }
+
     const botName = DEFAULT_BOT_NAMES[seat] || `Bot: ${seat}`;
 
+    participant.id = `bot_${seat}`;
     participant.isBot = true;
     participant.playerId = POSITION_TO_SEAT[seat];
     participant.name = botName;
@@ -919,7 +945,83 @@ export class GameRoom {
     this.broadcast({
       type: 'TOAST_NOTIFICATION',
       payload: {
-        message: `🤖 ${seat} permanently converted to AI Bot.`,
+        message: `🤖 Seat ${POSITION_TO_SEAT[seat]} (${seat}) converted to AI Bot.`,
+        type: 'info',
+      },
+    });
+
+    this.broadcastRoomState();
+    this.broadcastGameState();
+
+    return { success: true };
+  }
+
+  public handleKickPlayer(
+    hostClientId: string,
+    seat: PlayerPosition
+  ): { success: boolean; error?: string } {
+    return this.handleConvertToBot(hostClientId, seat);
+  }
+
+  public handleSwapSeats(
+    hostClientId: string,
+    seatA: PlayerPosition,
+    seatB: PlayerPosition
+  ): { success: boolean; error?: string } {
+    if (hostClientId !== this.hostClientId) {
+      return { success: false, error: 'Only the room host can swap player seats.' };
+    }
+    if (seatA === seatB) {
+      return { success: true };
+    }
+
+    const partA = this.players.get(seatA);
+    const partB = this.players.get(seatB);
+
+    if (!partA || !partB) {
+      return { success: false, error: 'Invalid seats specified for swap.' };
+    }
+
+    // Clear any reservations for both seats
+    this.clearSeatReservation(seatA);
+    this.clearSeatReservation(seatB);
+
+    // Swap positions & playerId
+    partA.position = seatB;
+    partA.playerId = POSITION_TO_SEAT[seatB];
+    partB.position = seatA;
+    partB.playerId = POSITION_TO_SEAT[seatA];
+
+    this.players.set(seatA, partB);
+    this.players.set(seatB, partA);
+
+    // Update client position mappings
+    if (!partA.isBot && this.clientSockets.has(partA.id)) {
+      this.clientPositions.set(partA.id, seatB);
+    }
+    if (!partB.isBot && this.clientSockets.has(partB.id)) {
+      this.clientPositions.set(partB.id, seatA);
+    }
+
+    // If game is in progress, sync player info with controller while preserving seat score/state
+    if (this.controller) {
+      if (partB.isBot) {
+        this.controller.replacePlayerWithBot(seatA, partB.name);
+      } else {
+        this.controller.takeoverBotSeat(seatA, partB.id, partB.name);
+      }
+
+      if (partA.isBot) {
+        this.controller.replacePlayerWithBot(seatB, partA.name);
+      } else {
+        this.controller.takeoverBotSeat(seatB, partA.id, partA.name);
+      }
+    }
+
+    this.broadcast({
+      type: 'TOAST_NOTIFICATION',
+      payload: {
+        message: `🔄 Host swapped Seat ${POSITION_TO_SEAT[seatA]} (${seatA}) and Seat ${POSITION_TO_SEAT[seatB]} (${seatB}).`,
         type: 'info',
       },
     });

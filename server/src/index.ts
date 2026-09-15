@@ -201,10 +201,19 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             break;
           }
 
-          case 'CONVERT_TO_BOT': {
+          case 'CONVERT_TO_BOT':
+          case 'KICK_PLAYER': {
             const room = roomManager.getRoomByClientId(clientId);
             if (room && msg.payload?.seat) {
               room.handleConvertToBot(clientId, msg.payload.seat);
+            }
+            break;
+          }
+
+          case 'SWAP_SEATS': {
+            const room = roomManager.getRoomByClientId(clientId);
+            if (room && msg.payload?.seatA && msg.payload?.seatB) {
+              room.handleSwapSeats(clientId, msg.payload.seatA, msg.payload.seatB);
             }
             break;
           }

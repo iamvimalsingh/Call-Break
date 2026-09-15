@@ -72,6 +72,8 @@ export type ClientMessage =
   | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string; playerId?: string } }
   | { type: 'RESPOND_JOIN_REQUEST'; payload: { requestId: string; accept: boolean; targetSeat?: PlayerPosition } }
   | { type: 'CONVERT_TO_BOT'; payload: { seat: PlayerPosition } }
+  | { type: 'KICK_PLAYER'; payload: { seat: PlayerPosition } }
+  | { type: 'SWAP_SEATS'; payload: { seatA: PlayerPosition; seatB: PlayerPosition } }
   | { type: 'START_MATCH'; payload?: { autoFillBots?: boolean; totalRounds?: number } }
   | { type: 'START_GAME'; payload?: { autoFillBots?: boolean; totalRounds?: number } }
   | { type: 'RENAME_PLAYER'; payload: { seat: PlayerPosition; name: string } }

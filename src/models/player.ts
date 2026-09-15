@@ -29,6 +29,11 @@ export const CLOCKWISE_PLAYER_ORDER: readonly PlayerPosition[] = Object.freeze([
 ]);
 
 /**
+ * Standard position order array for UI rendering and seat iterations.
+ */
+export const POSITION_ORDER = CLOCKWISE_PLAYER_ORDER;
+
+/**
  * Standard Call Break counter-clockwise rotation (traditional South Asian play).
  * SOUTH -> EAST -> NORTH -> WEST -> SOUTH
  */

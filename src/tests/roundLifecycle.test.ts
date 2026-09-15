@@ -3,7 +3,7 @@
  * Tests complete 5-round match transitions (R1 -> R2 -> R3 -> R4 -> R5 -> Match Finished)
  */
 
-import { TestHarness } from './testHarness';
+import { TestHarness, assertEqual, assertOk } from './testHarness';
 import { AuthoritativeGameController } from '../../server/src/AuthoritativeGameController';
 import { PlayerPosition } from '../models/player';
 import { GameStatus } from '../models/gameState';
@@ -197,6 +197,169 @@ export function buildRoundLifecycleTestSuite(): TestHarness {
       if (westRecord.scores[PlayerPosition.SOUTH].roundScore !== rawRecord.scores[PlayerPosition.WEST].roundScore) {
         throw new Error('West perspective SOUTH score must match raw WEST score');
       }
+
+      authController.destroy();
+    }
+  );
+
+  harness.register(
+    category,
+    'Regression: Round 1 complete -> Next Round executes -> Round 2 is fully active and deal reset',
+    async () => {
+      const authController = new AuthoritativeGameController();
+      authController.initializeMatch({
+        [PlayerPosition.SOUTH]: { id: 'p1_south', name: 'South Player', isBot: false, position: PlayerPosition.SOUTH },
+        [PlayerPosition.WEST]: { id: 'p2_west', name: 'West Player', isBot: true, position: PlayerPosition.WEST },
+        [PlayerPosition.NORTH]: { id: 'p3_north', name: 'North Player', isBot: true, position: PlayerPosition.NORTH },
+        [PlayerPosition.EAST]: { id: 'p4_east', name: 'East Player', isBot: true, position: PlayerPosition.EAST },
+      }, 5);
+
+      authController.clearTurnTimer();
+      authController.clearRoundTransitionTimer();
+
+      const rules = new CallBreakRulesEngine();
+
+      // Complete Round 1 bidding
+      let state = authController.getState();
+      assertEqual(state.currentRound, 1, 'Initial match must start at Round 1');
+      assertEqual(state.status, GameStatus.BIDDING, 'Initial match must be in BIDDING phase');
+
+      while (state.status === GameStatus.BIDDING) {
+        authController.submitBid(state.currentPlayer, 3);
+        authController.clearTurnTimer();
+        state = authController.getState();
+      }
+
+      assertEqual(state.status, GameStatus.PLAYING, 'After bids, round 1 must be PLAYING');
+
+      // Play all 13 tricks in Round 1
+      for (let trick = 1; trick <= 13; trick++) {
+        for (let step = 0; step < 4; step++) {
+          state = authController.getState();
+          const curPlayer = state.currentPlayer;
+          const moves = rules.getLegalMoves(state.players[curPlayer].hand, state.currentTrick, state.config.trumpSuit);
+          authController.playCard(curPlayer, moves[0]);
+          authController.clearTurnTimer();
+        }
+      }
+
+      // Authoritative round scoring
+      state = authController.getState();
+      assertEqual(state.status, GameStatus.ROUND_ENDED, 'After trick 13, status must be ROUND_ENDED');
+      assertEqual(state.currentRound, 1, 'Must still be round 1 before nextRound transition');
+      assertEqual(state.roundScores.length, 1, 'Round 1 score record must exist');
+
+      // Execute startNextRound() / nextRound()
+      const advanced = authController.startNextRound();
+      assertEqual(advanced, true, 'startNextRound must return true');
+
+      // Verify Round 2 State
+      const r2State = authController.getState();
+      assertEqual(r2State.currentRound, 2, 'Must increment currentRound to 2');
+      assertEqual(r2State.status, GameStatus.BIDDING, 'Must transition to BIDDING for Round 2');
+      assertEqual(r2State.completedTricks.length, 0, 'completedTricks must be reset to 0 in Round 2');
+      assertEqual(r2State.currentTrick.cards.length, 0, 'currentTrick.cards must be empty in Round 2');
+      assertEqual(r2State.currentTrick.trickNumber, 1, 'currentTrick.trickNumber must be 1 in Round 2');
+      assertEqual(r2State.dealer, PlayerPosition.WEST, 'Dealer must rotate to WEST for Round 2');
+      assertEqual(r2State.currentPlayer, PlayerPosition.NORTH, 'First bidder must be NORTH for Round 2');
+
+      // Verify all 4 players have 13 fresh cards, null bids, and 0 tricks won
+      for (const pos of [PlayerPosition.SOUTH, PlayerPosition.WEST, PlayerPosition.NORTH, PlayerPosition.EAST]) {
+        const player = r2State.players[pos];
+        assertEqual(player.hand.length, 13, `Player ${pos} must have 13 cards dealt`);
+        assertEqual(player.currentBid, null, `Player ${pos} bid must be null`);
+        assertEqual(player.tricksWon, 0, `Player ${pos} tricksWon must be 0`);
+      }
+
+      // Complete Round 2 bidding & tricks -> advance to Round 3
+      while (authController.getState().status === GameStatus.BIDDING) {
+        authController.submitBid(authController.getState().currentPlayer, 3);
+        authController.clearTurnTimer();
+      }
+
+      for (let trick = 1; trick <= 13; trick++) {
+        for (let step = 0; step < 4; step++) {
+          const s = authController.getState();
+          const curPlayer = s.currentPlayer;
+          const moves = rules.getLegalMoves(s.players[curPlayer].hand, s.currentTrick, s.config.trumpSuit);
+          authController.playCard(curPlayer, moves[0]);
+          authController.clearTurnTimer();
+        }
+      }
+
+      const r2EndState = authController.getState();
+      assertEqual(r2EndState.status, GameStatus.ROUND_ENDED, 'After round 2 trick 13, status must be ROUND_ENDED');
+      assertEqual(r2EndState.roundScores.length, 2, 'Round 2 score record must exist');
+
+      const advancedToR3 = authController.startNextRound();
+      assertEqual(advancedToR3, true, 'Must advance to Round 3');
+      const r3State = authController.getState();
+      assertEqual(r3State.currentRound, 3, 'Must increment currentRound to 3');
+      assertEqual(r3State.status, GameStatus.BIDDING, 'Must transition to BIDDING for Round 3');
+      assertEqual(r3State.dealer, PlayerPosition.NORTH, 'Dealer must rotate to NORTH for Round 3');
+      assertEqual(r3State.currentPlayer, PlayerPosition.EAST, 'First bidder must be EAST for Round 3');
+
+      authController.destroy();
+    }
+  );
+
+  harness.register(
+    category,
+    'Regression: Real-time 4s server timer automatically fires and transitions to Round 2 without any client action',
+    async () => {
+      const authController = new AuthoritativeGameController();
+      let stateEmissions: GameStatus[] = [];
+      authController.onStateChange((s) => {
+        stateEmissions.push(s.status);
+      });
+
+      authController.initializeMatch({
+        [PlayerPosition.SOUTH]: { id: 'p1_south', name: 'South Player', isBot: false, position: PlayerPosition.SOUTH },
+        [PlayerPosition.WEST]: { id: 'p2_west', name: 'West Player', isBot: true, position: PlayerPosition.WEST },
+        [PlayerPosition.NORTH]: { id: 'p3_north', name: 'North Player', isBot: true, position: PlayerPosition.NORTH },
+        [PlayerPosition.EAST]: { id: 'p4_east', name: 'East Player', isBot: true, position: PlayerPosition.EAST },
+      }, 5);
+
+      authController.clearTurnTimer();
+
+      const rules = new CallBreakRulesEngine();
+
+      // Submit Round 1 bids (total = 12 to avoid rebid)
+      while (authController.getState().status === GameStatus.BIDDING) {
+        authController.submitBid(authController.getState().currentPlayer, 3);
+        authController.clearTurnTimer();
+      }
+
+      // Play 13 tricks in Round 1
+      for (let trick = 1; trick <= 13; trick++) {
+        for (let step = 0; step < 4; step++) {
+          const s = authController.getState();
+          const curPlayer = s.currentPlayer;
+          const moves = rules.getLegalMoves(s.players[curPlayer].hand, s.currentTrick, s.config.trumpSuit);
+          authController.playCard(curPlayer, moves[0]);
+          authController.clearTurnTimer();
+        }
+      }
+
+      // At this instant, Round 1 is complete and scored, and the 4s auto transition is running
+      const endedState = authController.getState();
+      assertEqual(endedState.status, GameStatus.ROUND_ENDED, 'Must be ROUND_ENDED after trick 13');
+      assertEqual(endedState.currentRound, 1, 'Must be currentRound 1');
+      assertEqual(endedState.roundScores.length, 1, 'Must have Round 1 scores');
+
+      // Now wait 4.2 seconds WITHOUT calling any function or triggering any client action
+      await new Promise((resolve) => setTimeout(resolve, 4200));
+
+      // After 4.2s, the server timer MUST have executed startNextRound()
+      const transitionedState = authController.getState();
+      assertEqual(transitionedState.status, GameStatus.BIDDING, 'Automatic timer must transition status to BIDDING');
+      assertEqual(transitionedState.currentRound, 2, 'Automatic timer must advance to currentRound 2');
+      assertEqual(transitionedState.dealer, PlayerPosition.WEST, 'Dealer must rotate to WEST for Round 2');
+      assertEqual(transitionedState.currentPlayer, PlayerPosition.NORTH, 'First bidder must be NORTH for Round 2');
+      assertEqual(transitionedState.completedTricks.length, 0, 'completedTricks must be 0 for Round 2');
+      assertEqual(transitionedState.players[PlayerPosition.SOUTH].hand.length, 13, 'South must have 13 new cards in Round 2');
+      assertEqual(transitionedState.players[PlayerPosition.SOUTH].currentBid, null, 'South bid must be reset to null in Round 2');
+      assertEqual(transitionedState.players[PlayerPosition.SOUTH].tricksWon, 0, 'South tricksWon must be reset to 0 in Round 2');
 
       authController.destroy();
     }
