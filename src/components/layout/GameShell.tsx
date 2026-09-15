@@ -15,7 +15,7 @@ import { TurnTimerPayload, ToastPayload, JoinRequestPayload } from '../../models
 import { sharedGameStore } from '../../core/state/gameStore';
 import { createInitialGameState } from '../../core/state/initialState';
 import { CallBreakRulesEngine } from '../../core/rules/CallBreakRulesEngine';
-import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
+import { sharedMultiplayerClient, getActiveTableId } from '../../services/multiplayer/MultiplayerClient';
 import { TableTopBar } from '../hud/TableTopBar';
 import { GameTable } from '../table/GameTable';
 import { ScoreBoardModal } from '../hud/ScoreBoardModal';
@@ -44,7 +44,7 @@ export const GameShell: React.FC = () => {
   const [isScoreboardOpen, setIsScoreboardOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
-  const [isHomeOpen, setIsHomeOpen] = useState(() => sharedGameStore.getState().status === GameStatus.IDLE);
+  const [isHomeOpen, setIsHomeOpen] = useState(() => !getActiveTableId() && sharedGameStore.getState().status === GameStatus.IDLE);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isStatisticsOpen, setIsStatisticsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -152,6 +152,29 @@ export const GameShell: React.FC = () => {
     const unsubRoom = sharedMultiplayerClient.onRoomState((room) => {
       setRoomCode(room.roomCode);
       setIsHost(room.hostId === room.myClientId);
+      if (room.status === 'PLAYING') {
+        setIsHomeOpen(false);
+        setIsRoomLobbyOpen(false);
+      } else if (room.status === 'LOBBY') {
+        setIsHomeOpen(false);
+        setIsRoomLobbyOpen(true);
+      }
+    });
+
+    const unsubError = sharedMultiplayerClient.onError((err) => {
+      if (
+        err.code === 'ROOM_NOT_FOUND' ||
+        err.code === 'TABLE_NOT_ACTIVE' ||
+        err.message?.toLowerCase().includes('no active table')
+      ) {
+        setIsHomeOpen(true);
+        setIsRoomLobbyOpen(false);
+        setToast({
+          id: Date.now().toString(),
+          message: 'Active table was closed or not found. Back to lobby.',
+          type: 'info',
+        });
+      }
     });
 
     const unsubTimer = sharedMultiplayerClient.onTurnTimer((payload) => {
@@ -183,6 +206,7 @@ export const GameShell: React.FC = () => {
       unsubStarted();
       unsubEvent();
       unsubRoom();
+      unsubError();
       unsubTimer();
       unsubToast();
       unsubJoinReq();

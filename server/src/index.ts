@@ -210,7 +210,7 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
           }
 
           case 'LEAVE_ROOM': {
-            roomManager.leaveRoom(clientId);
+            roomManager.leaveRoom(clientId, true);
             break;
           }
 
@@ -235,12 +235,12 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 
     socket.on('close', () => {
       console.log(`[WebSocket] Client disconnected: ${clientId}`);
-      roomManager.leaveRoom(clientId);
+      roomManager.leaveRoom(clientId, false);
     });
 
     socket.on('error', (err) => {
       console.error(`[WebSocket] Error for client ${clientId}:`, err.message);
-      roomManager.leaveRoom(clientId);
+      roomManager.leaveRoom(clientId, false);
     });
   });
 

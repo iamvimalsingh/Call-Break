@@ -204,7 +204,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
 
         {/* In-Game Table Live Status (Multiplayer) */}
         {isMultiplayer && (
-          <div className="hidden sm:flex items-center shrink-0">
+          <div className="flex items-center shrink-0">
             {connectionState === 'OPEN' ? (
               <div
                 id="badge-table-online"

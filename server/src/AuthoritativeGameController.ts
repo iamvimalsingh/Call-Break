@@ -19,8 +19,10 @@ import { GameStateStore } from '../../src/core/state/gameStore';
 import { LocalGameController } from '../../src/core/controller/LocalGameController';
 import { createInitialGameState } from '../../src/core/state/initialState';
 
-export const MAIN_TURN_SECONDS = 45;
-export const EXTRA_TURN_SECONDS = 15;
+// Standard active turn timers: 20s main action time + 10s extra time.
+// The 45-second timer is strictly reserved for the disconnect/reconnect window in RoomManager.
+export const MAIN_TURN_SECONDS = 20;
+export const EXTRA_TURN_SECONDS = 10;
 
 const POSITIONS: readonly PlayerPosition[] = [
   PlayerPosition.SOUTH,

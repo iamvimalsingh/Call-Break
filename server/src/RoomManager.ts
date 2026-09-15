@@ -173,7 +173,7 @@ export class GameRoom {
     clientId: string,
     playerName: string,
     socket: WebSocket
-  ): { success: boolean; position?: PlayerPosition; error?: string } {
+  ): { success: boolean; position?: PlayerPosition; error?: string; errorCode?: string } {
     const cleanPlayerName = (playerName || '')
       .replace(/\s*\(You\)$/i, '')
       .replace(/\s*\(Bot\)$/i, '')
@@ -396,10 +396,32 @@ export class GameRoom {
 
       targetPos = availableSeats[0].seat;
       const incomingName = cleanPlayerName || `Player ${targetPos}`;
-      const hostSocket = this.clientSockets.get(this.hostClientId);
-      const isHostConnected = hostSocket && hostSocket.readyState === WebSocket.OPEN;
+      let hostSocket = this.clientSockets.get(this.hostClientId);
+      let isHostConnected = hostSocket && hostSocket.readyState === WebSocket.OPEN;
 
-      if (isHostConnected) {
+      // If current host is disconnected, find first connected human player to assume host duties
+      if (!isHostConnected) {
+        for (const pPos of SEAT_ORDER) {
+          const participant = this.players.get(pPos);
+          if (
+            participant &&
+            !participant.isBot &&
+            this.clientSockets.has(participant.id) &&
+            this.clientSockets.get(participant.id)?.readyState === WebSocket.OPEN
+          ) {
+            for (const p of this.players.values()) {
+              p.isHost = false;
+            }
+            participant.isHost = true;
+            this.hostClientId = participant.id;
+            hostSocket = this.clientSockets.get(participant.id);
+            isHostConnected = true;
+            break;
+          }
+        }
+      }
+
+      if (isHostConnected && hostSocket) {
         // Send Join Request to Host for approval
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         this.pendingJoinRequests.set(requestId, {
@@ -452,7 +474,7 @@ export class GameRoom {
           };
           socket.send(JSON.stringify(errMsg));
         } catch {}
-        return { success: false, error: 'Table host is unreachable' };
+        return { success: false, error: 'Table host is unreachable', errorCode: 'HOST_UNAVAILABLE' };
       }
     }
 
@@ -502,7 +524,34 @@ export class GameRoom {
     return { success: true, position: openPosition };
   }
 
-  public removeClient(clientId: string): void {
+  public getActiveReservationCount(): number {
+    const now = Date.now();
+    let count = 0;
+    const countedPositions = new Set<PlayerPosition>();
+    for (const info of this.disconnectedSeats.values()) {
+      if (now - info.disconnectedAt <= 45000 && !countedPositions.has(info.position)) {
+        countedPositions.add(info.position);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  public hasActiveReservations(): boolean {
+    return this.getActiveReservationCount() > 0;
+  }
+
+  public hasSeatReservation(seat: PlayerPosition): boolean {
+    const now = Date.now();
+    for (const info of this.disconnectedSeats.values()) {
+      if (info.position === seat && now - info.disconnectedAt <= 45000) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public removeClient(clientId: string, isExplicit: boolean = false): void {
     const pos = this.clientPositions.get(clientId);
     const leavingPlayer = pos ? this.players.get(pos) : undefined;
     const rawPlayerName = leavingPlayer ? leavingPlayer.name : 'A player';
@@ -523,7 +572,7 @@ export class GameRoom {
 
     // Rule 1: DO NOT remove the seat (P# remains active). Convert to Bot.
     const persona = DEFAULT_BOT_NAMES[pos] || 'Bot: Shield';
-    const botName = this.status === 'PLAYING' && cleanPlayerName ? `🤖 ${cleanPlayerName} (Auto-Play)` : persona;
+    const botName = this.status === 'PLAYING' && cleanPlayerName && !isExplicit ? `🤖 ${cleanPlayerName} (Auto-Play)` : persona;
 
     const botParticipant: RoomParticipant = {
       id: `bot_${pos}`,
@@ -584,56 +633,66 @@ export class GameRoom {
       // Clear any previous reservations for this seat
       this.clearSeatReservation(pos);
 
-      // Record disconnected seat info for same-seat re-connection (45-second reservation)
-      const disconnectTime = Date.now();
-      const reservationTimer = setTimeout(() => {
-        // After 45 seconds without successful reconnect, clear reservation
-        const currentInfo = this.disconnectedSeats.get(clientId);
-        if (currentInfo && currentInfo.position === pos) {
-          this.clearSeatReservation(pos);
-
-          // Update seat participant name to standard bot if it was an auto-play label
-          const seatPart = this.players.get(pos);
-          if (seatPart && seatPart.isBot) {
-            const defaultBot = DEFAULT_BOT_NAMES[pos] || `Bot: ${pos}`;
-            seatPart.name = defaultBot;
-            if (this.controller) {
-              this.controller.replacePlayerWithBot(pos, defaultBot);
-            }
-          }
-
-          this.broadcast({
-            type: 'TOAST_NOTIFICATION',
-            payload: {
-              message: `⏱️ Reconnect reservation expired for seat ${pos}. Now open for takeover.`,
-              type: 'info',
-            },
-          });
-          this.broadcastRoomState();
-          this.broadcastGameState();
+      if (isExplicit) {
+        // Explicit exit: do NOT create a 45s reservation, player deliberately abandoned table
+        if (this.controller) {
+          this.controller.replacePlayerWithBot(pos, botName);
         }
-      }, 45000);
+      } else {
+        // Implicit disconnect (e.g. reload, network drop): record 45-second reservation
+        const disconnectTime = Date.now();
+        const reservationTimer = setTimeout(() => {
+          // After 45 seconds without successful reconnect, clear reservation
+          const currentInfo = this.disconnectedSeats.get(clientId);
+          if (currentInfo && currentInfo.position === pos) {
+            this.clearSeatReservation(pos);
 
-      const seatInfo: DisconnectedSeatInfo = {
-        position: pos,
-        name: cleanPlayerName,
-        originalClientId: clientId,
-        wasHost,
-        disconnectedAt: disconnectTime,
-        reservationTimeout: reservationTimer,
-      };
+            // Update seat participant name to standard bot if it was an auto-play label
+            const seatPart = this.players.get(pos);
+            if (seatPart && seatPart.isBot) {
+              const defaultBot = DEFAULT_BOT_NAMES[pos] || `Bot: ${pos}`;
+              seatPart.name = defaultBot;
+              if (this.controller) {
+                this.controller.replacePlayerWithBot(pos, defaultBot);
+              }
+            }
 
-      this.disconnectedSeats.set(clientId, seatInfo);
-      if (cleanPlayerName) {
-        this.disconnectedSeats.set(cleanPlayerName.toLowerCase(), seatInfo);
+            this.broadcast({
+              type: 'TOAST_NOTIFICATION',
+              payload: {
+                message: `⏱️ Reconnect reservation expired for seat ${pos}. Now open for takeover.`,
+                type: 'info',
+              },
+            });
+            this.broadcastRoomState();
+            this.broadcastGameState();
+
+            // Cleanup empty room if no clients or reservations remain
+            RoomManager.getInstance().cleanupRoomIfEmpty(this.roomCode);
+          }
+        }, 45000);
+
+        const seatInfo: DisconnectedSeatInfo = {
+          position: pos,
+          name: cleanPlayerName,
+          originalClientId: clientId,
+          wasHost,
+          disconnectedAt: disconnectTime,
+          reservationTimeout: reservationTimer,
+        };
+
+        this.disconnectedSeats.set(clientId, seatInfo);
+        if (cleanPlayerName) {
+          this.disconnectedSeats.set(cleanPlayerName.toLowerCase(), seatInfo);
+        }
+
+        // Update authoritative game controller with bot takeover
+        if (this.controller) {
+          this.controller.replacePlayerWithBot(pos, botName);
+        }
       }
 
-      // Update authoritative game controller with bot takeover
-      if (this.controller) {
-        this.controller.replacePlayerWithBot(pos, botName);
-      }
-
-      // 1. Broadcast PLAYER_DISCONNECTED & PLAYER_LEFT events to all remaining clients
+      // Broadcast PLAYER_DISCONNECTED & PLAYER_LEFT events to all remaining clients
       this.broadcast({
         type: 'PLAYER_DISCONNECTED',
         payload: {
@@ -651,16 +710,16 @@ export class GameRoom {
         },
       });
 
-      // 2. Broadcast Toast notification on remaining players' screens
+      // Broadcast Toast notification on remaining players' screens
       this.broadcast({
         type: 'TOAST_NOTIFICATION',
         payload: {
-          message: `⚠️ ${cleanPlayerName} disconnected. Bot is now playing.`,
+          message: isExplicit ? `🚪 ${cleanPlayerName} left the table.` : `⚠️ ${cleanPlayerName} disconnected. Bot is now playing.`,
           type: 'warning',
         },
       });
 
-      // 3. Broadcast updated Room State and Game State
+      // Broadcast updated Room State and Game State
       this.broadcastRoomState();
       this.broadcastGameState();
     }
@@ -810,6 +869,9 @@ export class GameRoom {
         type: 'success',
       },
     });
+
+    // Register admitted player to room mapping
+    RoomManager.getInstance().registerClientRoom(pending.clientId, this.roomCode);
 
     this.broadcastRoomState();
     this.broadcastGameState();
@@ -1301,30 +1363,44 @@ export class RoomManager {
       };
     }
 
-    // Leave any previous room
-    this.leaveRoom(clientId);
+    // Leave any DIFFERENT previous room
+    const currentRoomCode = this.clientRoomMap.get(clientId);
+    if (currentRoomCode && currentRoomCode !== cleanCode) {
+      this.leaveRoom(clientId, true);
+    }
 
     const result = room.addPlayer(clientId, playerName, socket);
     if (!result.success) {
-      return { success: false, error: result.error, errorCode: 'JOIN_FAILED' };
+      return { success: false, error: result.error, errorCode: (result as any).errorCode || 'JOIN_FAILED' };
     }
 
     this.clientRoomMap.set(clientId, cleanCode);
     return { success: true, room };
   }
 
-  public leaveRoom(clientId: string): void {
+  public leaveRoom(clientId: string, isExplicit: boolean = false): void {
     const roomCode = this.clientRoomMap.get(clientId);
     if (!roomCode) return;
 
-    this.clientRoomMap.delete(clientId);
     const room = this.rooms.get(roomCode);
     if (room) {
-      room.removeClient(clientId);
-      if (room.getConnectedClientCount() === 0) {
+      room.removeClient(clientId, isExplicit);
+      if (room.getConnectedClientCount() === 0 && !room.hasActiveReservations()) {
         room.destroy();
         this.rooms.delete(roomCode);
       }
+    }
+    if (isExplicit) {
+      this.clientRoomMap.delete(clientId);
+    }
+  }
+
+  public cleanupRoomIfEmpty(roomCode: string): void {
+    const cleanCode = normalizeRoomCode(roomCode);
+    const room = this.rooms.get(cleanCode);
+    if (room && room.getConnectedClientCount() === 0 && !room.hasActiveReservations()) {
+      room.destroy();
+      this.rooms.delete(cleanCode);
     }
   }
 

@@ -43,6 +43,64 @@ export type JoinRequestListener = (payload: JoinRequestPayload) => void;
 export type JoinRequestStatusListener = (payload: JoinRequestStatusPayload) => void;
 
 const PLAYER_ID_STORAGE_KEY = 'cb_player_id';
+const ACTIVE_TABLE_STORAGE_KEY = 'cb_active_table_id';
+const CONFIRMED_SEAT_STORAGE_KEY = 'cb_confirmed_seat';
+
+/**
+ * Returns the currently active table ID persisted in localStorage, if any.
+ */
+export function getActiveTableId(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem(ACTIVE_TABLE_STORAGE_KEY);
+      return val && val.trim().length > 0 ? val.trim().toUpperCase() : null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Persists or clears the active table ID in localStorage.
+ */
+export function setActiveTableId(tableId: string | null): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (tableId && tableId.trim().length > 0) {
+        localStorage.setItem(ACTIVE_TABLE_STORAGE_KEY, tableId.trim().toUpperCase());
+      } else {
+        localStorage.removeItem(ACTIVE_TABLE_STORAGE_KEY);
+      }
+    }
+  } catch {}
+}
+
+/**
+ * Returns the confirmed player seat persisted in localStorage, if any.
+ */
+export function getConfirmedSeat(): PlayerPosition | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem(CONFIRMED_SEAT_STORAGE_KEY);
+      return (val as PlayerPosition) || null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Persists or clears the confirmed player seat in localStorage.
+ */
+export function setConfirmedSeat(seat: PlayerPosition | null): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (seat) {
+        localStorage.setItem(CONFIRMED_SEAT_STORAGE_KEY, seat);
+      } else {
+        localStorage.removeItem(CONFIRMED_SEAT_STORAGE_KEY);
+      }
+    }
+  } catch {}
+}
 
 /**
  * Returns the stable persistent player ID from localStorage (cb_player_id),
@@ -169,6 +227,7 @@ export class MultiplayerClient {
   private reconnectAttempts: number = 0;
   private reconnectTimer: any = null;
   private isManualDisconnect: boolean = false;
+  private keepaliveTimer: any = null;
 
   private roomStateListeners: Set<RoomStateListener> = new Set();
   private gameStateListeners: Set<GameStateListener> = new Set();
@@ -308,11 +367,28 @@ export class MultiplayerClient {
           console.log(`[WebSocket] onopen: Connected successfully to ${wsUrl}`, event);
           this.socket = ws;
           this.reconnectAttempts = 0;
+          this.startKeepalive();
+
           // Flush pending queue
           while (this.pendingQueue.length > 0) {
             const msg = this.pendingQueue.shift();
             if (msg) this.send(msg);
           }
+
+          // Automatically resume active table session if persisted on browser reload
+          const activeTable = getActiveTableId();
+          if (activeTable) {
+            console.log(`[WebSocket] Attempting to auto-resume active table session: ${activeTable}`);
+            this.send({
+              type: 'JOIN_ROOM',
+              payload: {
+                roomCode: activeTable,
+                playerId: this.playerId,
+                playerName: 'Player',
+              },
+            });
+          }
+
           finish('OPEN');
         };
 
@@ -323,6 +399,7 @@ export class MultiplayerClient {
         ws.onerror = (err) => {
           const errMsg = `WebSocket connection warning on ${wsUrl}`;
           console.warn('[WebSocket] onerror (handled gracefully):', errMsg, err);
+          this.stopKeepalive();
           finish('CLOSED', errMsg);
         };
 
@@ -333,6 +410,7 @@ export class MultiplayerClient {
               ? 'Connection closed normally'
               : `Server connection closed (code: ${event.code})`);
           console.warn(`[WebSocket] onclose: code=${event.code}, reason=${reason}`);
+          this.stopKeepalive();
           finish('CLOSED', reason);
 
           // Automatic reconnect with backoff when disconnected unexpectedly
@@ -354,6 +432,7 @@ export class MultiplayerClient {
   public disconnect(): void {
     this.isManualDisconnect = true;
     this.reconnectAttempts = 0;
+    this.stopKeepalive();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -369,6 +448,26 @@ export class MultiplayerClient {
     }
     this.currentRoomState = null;
     this.setConnectionState('CLOSED', null);
+  }
+
+  private startKeepalive(): void {
+    this.stopKeepalive();
+    this.keepaliveTimer = setInterval(() => {
+      if (this.isConnected() && this.socket) {
+        try {
+          this.socket.send(JSON.stringify({ type: 'PING' }));
+        } catch {
+          // ignore
+        }
+      }
+    }, 20000); // 20-second application-level keepalive suitable for Render Free tier
+  }
+
+  private stopKeepalive(): void {
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
   }
 
   private send(message: ClientMessage): void {
@@ -405,15 +504,30 @@ export class MultiplayerClient {
       switch (msg.type) {
         case 'ROOM_STATE':
           this.currentRoomState = msg.payload;
+          if (msg.payload?.roomCode) {
+            setActiveTableId(msg.payload.roomCode);
+          }
+          if (msg.payload?.assignedPosition) {
+            setConfirmedSeat(msg.payload.assignedPosition);
+          }
           this.roomStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'MATCH_STARTED':
         case 'GAME_STARTED':
+          if (msg.payload?.roomCode) {
+            setActiveTableId(msg.payload.roomCode);
+          }
           this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
           break;
 
         case 'MATCH_SYNC':
+          if (msg.payload?.roomCode) {
+            setActiveTableId(msg.payload.roomCode);
+          }
+          if (msg.payload?.rawPosition) {
+            setConfirmedSeat(msg.payload.rawPosition);
+          }
           this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
           this.gameStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
@@ -452,6 +566,14 @@ export class MultiplayerClient {
           break;
 
         case 'ERROR':
+          if (
+            msg.payload?.code === 'ROOM_NOT_FOUND' ||
+            msg.payload?.code === 'TABLE_NOT_ACTIVE' ||
+            msg.payload?.message?.toLowerCase().includes('no active table')
+          ) {
+            setActiveTableId(null);
+            setConfirmedSeat(null);
+          }
           this.errorListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
@@ -566,6 +688,8 @@ export class MultiplayerClient {
       type: 'LEAVE_ROOM',
     });
     this.currentRoomState = null;
+    setActiveTableId(null);
+    setConfirmedSeat(null);
   }
 
   // Subscriptions
