@@ -2,6 +2,7 @@
  * Player Slot Component
  * Displays player avatar, dealer token, bid/tricks counter, turn indicator,
  * bot thinking visual feedback, and active player indicator animations.
+ * Compact horizontal pill layout for North Player, standard vertical layout for other seats.
  * Phase 8 Animations & Sound
  */
 
@@ -37,6 +38,7 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
 }) => {
   const isHuman = player.type === PlayerType.HUMAN;
   const isSouth = position === PlayerPosition.SOUTH;
+  const isNorth = position === PlayerPosition.NORTH;
   const prefersReducedMotion = useReducedMotion();
 
   // Clean, permanent, non-compounding display name
@@ -103,10 +105,180 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
     ringColor = '#eab308'; // yellow-500
   }
 
+  // --- SPECIAL COMPACT HORIZONTAL LAYOUT FOR NORTH PLAYER ---
+  if (isNorth) {
+    return (
+      <div
+        id={`player-slot-${position.toLowerCase()}`}
+        className="flex items-center justify-center select-none transition-all duration-200 shrink-0 w-auto"
+      >
+        <motion.div
+          animate={
+            isCurrentTurn && !prefersReducedMotion
+              ? {
+                  scale: isExtra ? [1, 1.02, 1] : [1, 1.01, 1],
+                  boxShadow: isExtra
+                    ? [
+                        '0 0 0px rgba(239, 68, 68, 0)',
+                        '0 0 16px rgba(239, 68, 68, 0.5)',
+                        '0 0 0px rgba(239, 68, 68, 0)',
+                      ]
+                    : [
+                        '0 0 0px rgba(16, 185, 129, 0)',
+                        '0 0 14px rgba(16, 185, 129, 0.4)',
+                        '0 0 0px rgba(16, 185, 129, 0)',
+                      ],
+                }
+              : {}
+          }
+          transition={
+            isCurrentTurn && !prefersReducedMotion
+              ? { repeat: Infinity, duration: isExtra ? 1 : 2, ease: 'easeInOut' }
+              : transitions.instant
+          }
+          className={`relative border backdrop-blur-xl shadow-md transition-all duration-200 flex flex-row items-center gap-1.5 xs:gap-2 sm:gap-2.5 px-2 xs:px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full ${
+            isCurrentTurn
+              ? isExtra
+                ? 'bg-gradient-to-r from-red-950/95 via-[#2b0c0c] to-stone-900/95 border-red-500 ring-1 sm:ring-2 ring-red-500/70 shadow-red-500/30'
+                : 'bg-gradient-to-r from-emerald-950/95 via-[#062417] to-stone-900/95 border-emerald-400 ring-1 sm:ring-2 ring-emerald-400/70 shadow-emerald-500/30'
+              : 'bg-stone-900/90 border-stone-700/80 hover:border-stone-600'
+          }`}
+        >
+          {/* Avatar Icon + Dealer Coin */}
+          <div className="relative flex items-center justify-center shrink-0">
+            {isCurrentTurn && timer && (
+              <svg
+                className="absolute -inset-1 sm:-inset-1.5 w-[calc(100%+8px)] sm:w-[calc(100%+12px)] h-[calc(100%+8px)] sm:h-[calc(100%+12px)] -rotate-90 pointer-events-none z-10"
+                viewBox="0 0 36 36"
+              >
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="15.5"
+                  fill="none"
+                  stroke={isExtra ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.15)'}
+                  strokeWidth="2.5"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="15.5"
+                  fill="none"
+                  stroke={ringColor}
+                  strokeWidth="2.5"
+                  strokeDasharray={97.4}
+                  strokeDashoffset={97.4 * (1 - progress)}
+                  strokeLinecap="round"
+                  className={`transition-all duration-300 ease-linear ${
+                    isExtra ? 'animate-pulse' : ''
+                  }`}
+                />
+              </svg>
+            )}
+
+            <div
+              className={`w-5 h-5 xs:w-6 xs:h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[9px] sm:text-xs font-bold border shrink-0 relative shadow-inner ${
+                isHuman
+                  ? 'bg-gradient-to-br from-blue-600 to-indigo-800 text-white border-blue-400/60 shadow-blue-900/40'
+                  : isCurrentTurn
+                  ? isExtra
+                    ? 'bg-gradient-to-br from-rose-900 to-red-950 text-red-200 border-red-500/80 shadow-red-950/60'
+                    : 'bg-gradient-to-br from-amber-700 to-amber-900 text-amber-200 border-amber-400/60 shadow-amber-950/50'
+                  : 'bg-stone-800 text-stone-300 border-stone-600/80'
+              }`}
+            >
+              {isHuman ? (
+                <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-200" />
+              ) : isCurrentTurn ? (
+                <BrainCircuit
+                  className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${
+                    isExtra ? 'text-red-400' : 'text-amber-300'
+                  } animate-pulse`}
+                />
+              ) : (
+                <Bot className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-400" />
+              )}
+            </div>
+
+            {/* Dealer Badge */}
+            {player.isDealer && (
+              <motion.div
+                id={`dealer-coin-${position.toLowerCase()}`}
+                initial={prefersReducedMotion ? false : { scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1 w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 text-stone-950 text-[7.5px] sm:text-[8.5px] font-black flex items-center justify-center shadow-md border border-amber-100 ring-1 ring-amber-500/60 z-30 select-none pointer-events-none"
+                title="Dealer"
+              >
+                D
+              </motion.div>
+            )}
+          </div>
+
+          {/* North Player Label */}
+          <span
+            className="font-bold text-white text-[11px] xs:text-xs sm:text-sm whitespace-nowrap leading-tight"
+            title={displayName}
+          >
+            {displayName}
+          </span>
+
+          <span className="text-stone-600 font-bold hidden xs:inline">•</span>
+
+          {/* Horizontal Details: Bid | Won | Cards */}
+          <div className="flex items-center gap-1 xs:gap-1.5 text-[9px] xs:text-[10px] sm:text-[11px] text-stone-300 font-mono whitespace-nowrap">
+            <span>
+              Bid: <strong className="text-amber-300 font-bold">{player.currentBid ?? '—'}</strong>
+            </span>
+            <span className="text-stone-500 font-bold">•</span>
+            <span>
+              Won:{' '}
+              <strong
+                className={
+                  player.currentBid !== null && player.tricksWon >= player.currentBid
+                    ? 'text-emerald-400 font-extrabold'
+                    : 'text-stone-200 font-bold'
+                }
+              >
+                {player.tricksWon}
+              </strong>
+            </span>
+            <span className="text-stone-500 font-bold">•</span>
+            <span className="text-stone-400">{player.hand.length} cards</span>
+          </div>
+
+          {/* Turn timer or turn dot */}
+          {isCurrentTurn && timer ? (
+            <motion.span
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className={`ml-0.5 px-1 sm:px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-mono font-black border flex items-center gap-0.5 leading-none shrink-0 ${
+                isExtra
+                  ? 'bg-red-950/90 border-red-500/80 text-red-300 animate-pulse ring-1 ring-red-500/50'
+                  : remaining <= 15
+                  ? 'bg-amber-950/90 border-amber-500/70 text-amber-300'
+                  : 'bg-emerald-950/90 border-emerald-500/60 text-emerald-300'
+              }`}
+              title={isExtra ? `Extra time: ${remaining}s left` : `Turn time: ${remaining}s left`}
+            >
+              <Clock className="w-2 h-2 sm:w-2.5 sm:h-2.5 shrink-0" />
+              <span>{isExtra ? `+${remaining}s` : `${remaining}s`}</span>
+            </motion.span>
+          ) : isCurrentTurn ? (
+            <span className="ml-0.5 relative flex h-1.5 w-1.5 sm:h-2 sm:w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 sm:h-2 sm:w-2 bg-emerald-400" />
+            </span>
+          ) : null}
+        </motion.div>
+      </div>
+    );
+  }
+
+  // --- STANDARD COMPACT VERTICAL LAYOUT FOR SOUTH, WEST, EAST ---
   return (
     <div
       id={`player-slot-${position.toLowerCase()}`}
-      className="flex flex-col items-center select-none transition-all duration-200 shrink-0 w-auto min-w-[100px] xs:min-w-[115px] sm:min-w-[135px]"
+      className="flex flex-col items-center select-none transition-all duration-200 shrink-0 w-auto min-w-[95px] xs:min-w-[110px] sm:min-w-[130px]"
     >
       {/* Player Card Container with Active Turn Glow */}
       <motion.div
@@ -276,9 +448,9 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
         {/* Row 3: Status indicator (e.g. Turn, Dealer, or Cards Remaining) */}
         <div className="flex items-center gap-1 text-[8px] xs:text-[8.5px] sm:text-[9px] font-mono mt-0.5 whitespace-nowrap">
           {isCurrentTurn ? (
-            <span className="text-amber-400 font-semibold flex items-center gap-1">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-              <span>{isSouth ? 'Your Turn' : 'Turn'}</span>
+            <span className="text-emerald-400 font-bold flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>{isSouth ? '🎯 Your Turn' : 'Turn'}</span>
             </span>
           ) : player.isDealer ? (
             <span className="text-amber-300 font-medium flex items-center gap-1">
