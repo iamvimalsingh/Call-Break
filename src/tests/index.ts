@@ -18,6 +18,7 @@ import { buildPhase12QASimulatorTestSuite } from './phase12QASimulator.test';
 import { buildPhase14NetlifyPWATestSuite } from './phase14NetlifyPWA.test';
 import { buildSoloWeightedDealTestSuite } from './soloWeightedDeal.test';
 import { buildMidGameJoinTestSuite } from './midGameJoin.test';
+import { buildRoundLifecycleTestSuite } from './roundLifecycle.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -35,6 +36,7 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildPhase14NetlifyPWATestSuite());
   composite.include(buildSoloWeightedDealTestSuite());
   composite.include(buildMidGameJoinTestSuite());
+  composite.include(buildRoundLifecycleTestSuite());
   return composite;
 }
 

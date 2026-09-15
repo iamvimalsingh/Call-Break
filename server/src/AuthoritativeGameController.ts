@@ -49,6 +49,7 @@ export class AuthoritativeGameController {
 
   private botTimer: NodeJS.Timeout | null = null;
   private turnTimerInterval: NodeJS.Timeout | null = null;
+  private roundTransitionTimer: NodeJS.Timeout | null = null;
   private currentTimerPlayer: PlayerPosition | null = null;
   private remainingSeconds: number = MAIN_TURN_SECONDS;
   private isExtraTime: boolean = false;
@@ -250,11 +251,39 @@ export class AuthoritativeGameController {
   }
 
   public nextRound(): boolean {
+    this.clearRoundTransitionTimer();
+    const state = this.store.getState();
+    if (state.status !== GameStatus.ROUND_ENDED || state.currentRound >= state.config.totalRounds) {
+      return false;
+    }
     const success = this.controller.nextRound();
     if (success) {
       this.advanceTurnOrStepBot();
     }
     return success;
+  }
+
+  /**
+   * Resets and clears any pending automatic round transition timer.
+   */
+  public clearRoundTransitionTimer(): void {
+    if (this.roundTransitionTimer) {
+      clearTimeout(this.roundTransitionTimer);
+      this.roundTransitionTimer = null;
+    }
+  }
+
+  /**
+   * Schedules authoritative server-side auto-transition to the next round after displaying the round summary.
+   */
+  private scheduleNextRoundAutoTransition(delayMs: number = 5500): void {
+    this.clearRoundTransitionTimer();
+    this.roundTransitionTimer = setTimeout(() => {
+      const state = this.store.getState();
+      if (state.status === GameStatus.ROUND_ENDED && state.currentRound < state.config.totalRounds) {
+        this.nextRound();
+      }
+    }, delayMs);
   }
 
   /**
@@ -470,6 +499,10 @@ export class AuthoritativeGameController {
       const state = this.store.getState();
       if (state.status === GameStatus.ROUND_ENDED) {
         this.controller.completeRound();
+        const scoredState = this.store.getState();
+        if (scoredState.status === GameStatus.ROUND_ENDED && scoredState.currentRound < scoredState.config.totalRounds) {
+          this.scheduleNextRoundAutoTransition(5500);
+        }
       } else {
         this.advanceTurnOrStepBot();
       }
@@ -692,6 +725,7 @@ export class AuthoritativeGameController {
 
   public destroy(): void {
     this.clearTurnTimer();
+    this.clearRoundTransitionTimer();
     if (this.botTimer) {
       clearTimeout(this.botTimer);
       this.botTimer = null;
