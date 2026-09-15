@@ -239,13 +239,7 @@ export class AuthoritativeGameController {
   public playCard(position: PlayerPosition, card: Card): boolean {
     const success = this.controller.playCard(position, card);
     if (success) {
-      const current = this.store.getState();
-      if (current.currentTrick.cards.length === 4) {
-        this.clearTurnTimer();
-        this.scheduleTrickResolution();
-      } else {
-        this.advanceTurnOrStepBot();
-      }
+      this.handlePostActionState();
     }
     return success;
   }
@@ -264,6 +258,13 @@ export class AuthoritativeGameController {
   }
 
   /**
+   * Alias for nextRound() to advance to the next round.
+   */
+  public startNextRound(): boolean {
+    return this.nextRound();
+  }
+
+  /**
    * Resets and clears any pending automatic round transition timer.
    */
   public clearRoundTransitionTimer(): void {
@@ -276,14 +277,53 @@ export class AuthoritativeGameController {
   /**
    * Schedules authoritative server-side auto-transition to the next round after displaying the round summary.
    */
-  private scheduleNextRoundAutoTransition(delayMs: number = 5500): void {
+  private scheduleNextRoundAutoTransition(delayMs: number = 4000): void {
     this.clearRoundTransitionTimer();
     this.roundTransitionTimer = setTimeout(() => {
       const state = this.store.getState();
       if (state.status === GameStatus.ROUND_ENDED && state.currentRound < state.config.totalRounds) {
-        this.nextRound();
+        this.startNextRound();
       }
     }, delayMs);
+    if (typeof (this.roundTransitionTimer as any)?.unref === 'function') {
+      (this.roundTransitionTimer as any).unref();
+    }
+  }
+
+  /**
+   * Handles post-card-play and post-bot-step state inspection for round ends and trick resolutions.
+   */
+  private handlePostActionState(): void {
+    const state = this.store.getState();
+
+    // 1. If round ended (completed 13 tricks)
+    if (state.status === GameStatus.ROUND_ENDED) {
+      this.clearTurnTimer();
+      // Complete round scoring if not yet finalized
+      this.controller.completeRound();
+      const scoredState = this.store.getState();
+      if (scoredState.status === GameStatus.ROUND_ENDED && scoredState.currentRound < scoredState.config.totalRounds) {
+        this.scheduleNextRoundAutoTransition(4000);
+      }
+      return;
+    }
+
+    // 2. If match reached completion
+    if (state.status === GameStatus.MATCH_FINISHED) {
+      this.clearTurnTimer();
+      this.clearRoundTransitionTimer();
+      return;
+    }
+
+    // 3. Fallback for decoupled modes where trick reaches 4 cards without immediate resolution
+    if (state.currentTrick.cards.length === 4) {
+      this.clearTurnTimer();
+      this.scheduleTrickResolution();
+      return;
+    }
+
+    // 4. Continue game flow to next turn or bot
+    this.advanceTurnOrStepBot();
   }
 
   /**
@@ -319,6 +359,9 @@ export class AuthoritativeGameController {
         }
       }
     }, 1000);
+    if (typeof (this.turnTimerInterval as any)?.unref === 'function') {
+      (this.turnTimerInterval as any).unref();
+    }
   }
 
   /**
@@ -477,14 +520,12 @@ export class AuthoritativeGameController {
       this.botTimer = setTimeout(() => {
         const didStep = this.controller.stepBotTurn();
         if (didStep) {
-          const currentState = this.store.getState();
-          if (currentState.currentTrick.cards.length === 4) {
-            this.scheduleTrickResolution();
-          } else {
-            this.advanceTurnOrStepBot();
-          }
+          this.handlePostActionState();
         }
       }, 550);
+      if (typeof (this.botTimer as any)?.unref === 'function') {
+        (this.botTimer as any).unref();
+      }
     }
   }
 
@@ -501,12 +542,15 @@ export class AuthoritativeGameController {
         this.controller.completeRound();
         const scoredState = this.store.getState();
         if (scoredState.status === GameStatus.ROUND_ENDED && scoredState.currentRound < scoredState.config.totalRounds) {
-          this.scheduleNextRoundAutoTransition(5500);
+          this.scheduleNextRoundAutoTransition(4000);
         }
       } else {
         this.advanceTurnOrStepBot();
       }
     }, 1100);
+    if (typeof (this.botTimer as any)?.unref === 'function') {
+      (this.botTimer as any).unref();
+    }
   }
 
   /**

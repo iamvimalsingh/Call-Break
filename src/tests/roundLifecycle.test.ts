@@ -20,17 +20,13 @@ export function buildRoundLifecycleTestSuite(): TestHarness {
       const authController = new AuthoritativeGameController();
       authController.initializeMatch({
         [PlayerPosition.SOUTH]: { id: 'p1_south', name: 'South Human', isBot: false, position: PlayerPosition.SOUTH },
-        [PlayerPosition.WEST]: { id: 'p2_west', name: 'West Bot', isBot: true, position: PlayerPosition.WEST },
-        [PlayerPosition.NORTH]: { id: 'p3_north', name: 'North Bot', isBot: true, position: PlayerPosition.NORTH },
-        [PlayerPosition.EAST]: { id: 'p4_east', name: 'East Bot', isBot: true, position: PlayerPosition.EAST },
+        [PlayerPosition.WEST]: { id: 'p2_west', name: 'West Human', isBot: false, position: PlayerPosition.WEST },
+        [PlayerPosition.NORTH]: { id: 'p3_north', name: 'North Human', isBot: false, position: PlayerPosition.NORTH },
+        [PlayerPosition.EAST]: { id: 'p4_east', name: 'East Human', isBot: false, position: PlayerPosition.EAST },
       }, 5);
 
       authController.clearTurnTimer();
       authController.clearRoundTransitionTimer();
-      if ((authController as any).botTimer) {
-        clearTimeout((authController as any).botTimer);
-        (authController as any).botTimer = null;
-      }
 
       const expectedDealers = [
         PlayerPosition.SOUTH, // Round 1
@@ -70,15 +66,11 @@ export function buildRoundLifecycleTestSuite(): TestHarness {
           }
         }
 
-        // Play the bidding phase in authoritative turn order
+        // Play the bidding phase in authoritative turn order (bid 3 each, total 12 > 8)
         while (state.status === GameStatus.BIDDING) {
           const bidder = state.currentPlayer;
-          const bidOk = authController.submitBid(bidder, 2);
+          const bidOk = authController.submitBid(bidder, 3);
           authController.clearTurnTimer();
-          if ((authController as any).botTimer) {
-            clearTimeout((authController as any).botTimer);
-            (authController as any).botTimer = null;
-          }
           if (!bidOk) {
             throw new Error(`Round ${round}: Failed to submit bid for ${bidder}`);
           }
@@ -101,34 +93,16 @@ export function buildRoundLifecycleTestSuite(): TestHarness {
             }
             const played = authController.playCard(curPlayer, legalMoves[0]);
             authController.clearTurnTimer();
-            if ((authController as any).botTimer) {
-              clearTimeout((authController as any).botTimer);
-              (authController as any).botTimer = null;
-            }
             if (!played) {
               throw new Error(`Round ${round} Trick ${trick}: Play card failed for ${curPlayer}`);
             }
           }
 
-          // Clear any pending trick resolution timer scheduled by playCard
           authController.clearTurnTimer();
-          authController.clearRoundTransitionTimer();
-          if ((authController as any).botTimer) {
-            clearTimeout((authController as any).botTimer);
-            (authController as any).botTimer = null;
-          }
-
-          // Resolve trick synchronously
-          (authController as any).controller.resolveTrick();
-        }
-
-        state = authController.getState();
-        if (state.status === GameStatus.ROUND_ENDED) {
-          (authController as any).controller.completeRound();
           state = authController.getState();
         }
 
-        // Verify round score record is appended
+        // Verify round score record is appended automatically upon round completion
         const roundRecord = state.roundScores.find((r) => r.roundNumber === round);
         if (!roundRecord) {
           throw new Error(`Round ${round} score record must exist`);
@@ -142,10 +116,6 @@ export function buildRoundLifecycleTestSuite(): TestHarness {
           const advanced = authController.nextRound();
           authController.clearTurnTimer();
           authController.clearRoundTransitionTimer();
-          if ((authController as any).botTimer) {
-            clearTimeout((authController as any).botTimer);
-            (authController as any).botTimer = null;
-          }
           if (!advanced) {
             throw new Error(`Failed to advance from round ${round} to ${round + 1}`);
           }
