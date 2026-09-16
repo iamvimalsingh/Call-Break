@@ -9,7 +9,7 @@
 import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GameMode, GameState } from '../../models/gameState';
-import { PlayerPosition } from '../../models/player';
+import { PlayerPosition, formatPlayerSeatIdentity } from '../../models/player';
 import { Trophy, RotateCcw, Award, Sparkles, Home, History, Users, X } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
@@ -66,7 +66,8 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   const humanWon = winners.includes(PlayerPosition.SOUTH);
 
   const getPlayerDisplayName = (pos: PlayerPosition): string => {
-    return pos === PlayerPosition.SOUTH ? 'You' : state.players[pos]?.name ?? pos;
+    const rawName = pos === PlayerPosition.SOUTH ? 'You' : state.players[pos]?.name ?? pos;
+    return formatPlayerSeatIdentity(pos, rawName);
   };
 
   const getRankBadge = (rank: number) => {

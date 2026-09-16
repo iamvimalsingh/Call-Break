@@ -11,7 +11,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { User, Bot, BrainCircuit, Clock } from 'lucide-react';
-import { PlayerPosition, PlayerState, PlayerType } from '../../models/player';
+import { PlayerPosition, PlayerState, PlayerType, formatPlayerSeatIdentity } from '../../models/player';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
 import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
@@ -44,8 +44,9 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
   const isWestOrEast = position === PlayerPosition.WEST || position === PlayerPosition.EAST;
   const prefersReducedMotion = useReducedMotion();
 
-  // Clean, permanent, non-compounding display name
+  // Clean, permanent, non-compounding display name with authoritative N/S/E/W seat prefix
   const displayName = useMemo((): string => {
+    let baseName = '';
     // Single-Player mode defaults
     if (
       !player.name ||
@@ -56,40 +57,47 @@ export const PlayerSlot: React.FC<PlayerSlotProps> = ({
     ) {
       switch (position) {
         case PlayerPosition.SOUTH:
-          return 'You';
+          baseName = 'You';
+          break;
         case PlayerPosition.WEST:
-          return 'West Player';
+          baseName = 'West Player';
+          break;
         case PlayerPosition.NORTH:
-          return 'North Player';
+          baseName = 'North Player';
+          break;
         case PlayerPosition.EAST:
-          return 'East Player';
+          baseName = 'East Player';
+          break;
       }
-    }
-
-    if (isSouth) {
+    } else if (isSouth) {
       const raw = player.name
         .replace(/\s*\((You|Host|West|North|East|South|Friend\s*\d+)\)/gi, '')
         .trim();
-      return raw && raw !== 'Player' && raw !== 'You' && raw !== 'Host' ? `${raw} (You)` : 'You';
-    }
+      baseName = raw && raw !== 'Player' && raw !== 'You' && raw !== 'Host' ? `${raw} (You)` : 'You';
+    } else {
+      // Strip any previously appended or recursive seat tags
+      const cleaned = player.name
+        .replace(/\s*\((You|Host|West|North|East|South|Friend\s*\d+)\)/gi, '')
+        .trim();
 
-    // Strip any previously appended or recursive seat tags
-    const cleaned = player.name
-      .replace(/\s*\((You|Host|West|North|East|South|Friend\s*\d+)\)/gi, '')
-      .trim();
-
-    if (!cleaned || /^(friend|player|opponent|bot)$/i.test(cleaned)) {
-      switch (position) {
-        case PlayerPosition.WEST:
-          return 'West Player';
-        case PlayerPosition.NORTH:
-          return 'North Player';
-        case PlayerPosition.EAST:
-          return 'East Player';
+      if (!cleaned || /^(friend|player|opponent|bot)$/i.test(cleaned)) {
+        switch (position) {
+          case PlayerPosition.WEST:
+            baseName = 'West Player';
+            break;
+          case PlayerPosition.NORTH:
+            baseName = 'North Player';
+            break;
+          case PlayerPosition.EAST:
+            baseName = 'East Player';
+            break;
+        }
+      } else {
+        baseName = cleaned;
       }
     }
 
-    return cleaned;
+    return formatPlayerSeatIdentity(position, baseName);
   }, [player.name, position, isSouth]);
 
   // Timer calculations

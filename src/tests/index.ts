@@ -22,6 +22,8 @@ import { buildRoundLifecycleTestSuite } from './roundLifecycle.test';
 import { buildHostTurnTimerTestSuite } from './hostTurnTimer.test';
 import { buildCustomRoomIdTestSuite } from './customRoomId.test';
 import { buildPreferredRoomIdTestSuite } from './preferredRoomIdStorage.test';
+import { buildPlayerSeatPrefixTestSuite } from './playerSeatPrefix.test';
+import { buildHostLifecycleTestSuite } from './hostLifecycle.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -43,6 +45,8 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildHostTurnTimerTestSuite());
   composite.include(buildCustomRoomIdTestSuite());
   composite.include(buildPreferredRoomIdTestSuite());
+  composite.include(buildPlayerSeatPrefixTestSuite());
+  composite.include(buildHostLifecycleTestSuite());
   return composite;
 }
 

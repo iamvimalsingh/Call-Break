@@ -7,7 +7,7 @@
 import React from 'react';
 import { X, Trophy, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { GameState } from '../../models/gameState';
-import { PlayerPosition } from '../../models/player';
+import { PlayerPosition, formatPlayerSeatIdentity } from '../../models/player';
 
 interface ScoreBoardModalProps {
   isOpen: boolean;
@@ -72,11 +72,12 @@ export const ScoreBoardModal: React.FC<ScoreBoardModalProps> = ({
                 {positions.map((pos) => {
                   const player = state.players[pos];
                   const isYou = pos === PlayerPosition.SOUTH;
+                  const displayName = formatPlayerSeatIdentity(pos, isYou ? 'You' : player.name);
                   return (
                     <th key={pos} className="py-2.5 px-3 font-semibold text-stone-200">
                       <div className="flex flex-col">
                         <span className={isYou ? 'text-emerald-400 font-bold' : 'text-stone-200'}>
-                          {isYou ? 'You' : player.name}
+                          {displayName}
                         </span>
                         <span className="text-[10px] text-stone-500 font-normal">
                           {isYou ? '(Player)' : '(Bot)'}

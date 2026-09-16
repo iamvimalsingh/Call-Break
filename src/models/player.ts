@@ -44,6 +44,34 @@ export const COUNTER_CLOCKWISE_PLAYER_ORDER: readonly PlayerPosition[] = Object.
   PlayerPosition.WEST,
 ]);
 
+/**
+ * Maps authoritative PlayerPosition seat to its single-character seat code.
+ * SOUTH = S, WEST = W, NORTH = N, EAST = E
+ */
+export function getSeatPrefixLetter(position: PlayerPosition): 'S' | 'W' | 'N' | 'E' {
+  switch (position) {
+    case PlayerPosition.SOUTH:
+      return 'S';
+    case PlayerPosition.WEST:
+      return 'W';
+    case PlayerPosition.NORTH:
+      return 'N';
+    case PlayerPosition.EAST:
+      return 'E';
+  }
+}
+
+/**
+ * Formats a player display identity with a permanent authoritative seat prefix.
+ * e.g. "S • You", "W • Bot: Shield", "N • Bot: Shark", "E • Rahul"
+ */
+export function formatPlayerSeatIdentity(position: PlayerPosition, displayName: string): string {
+  const seat = getSeatPrefixLetter(position);
+  // Strip any preexisting seat prefix to prevent double-prefixing
+  const cleanName = (displayName || '').replace(/^[SWNE]\s*[•·-]\s*/i, '').trim();
+  return `${seat} • ${cleanName || 'Player'}`;
+}
+
 export interface PlayerState {
   readonly id: string;
   readonly name: string;

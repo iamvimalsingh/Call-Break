@@ -310,6 +310,9 @@ export class GameRoom {
         // Clean up disconnected seat records
         this.clearSeatReservation(targetPos);
 
+        // Enforce Human-Host Invariant
+        this.ensureHumanHost(false);
+
         if (this.controller) {
           this.controller.takeoverBotSeat(targetPos, clientId, incomingName);
           const perspectiveState = this.controller.getPerspectiveState(targetPos);
@@ -397,33 +400,17 @@ export class GameRoom {
 
       targetPos = availableSeats[0].seat;
       const incomingName = cleanPlayerName || `Player ${targetPos}`;
+      this.ensureHumanHost(false);
       let hostSocket = this.clientSockets.get(this.hostClientId);
-      let isHostConnected = hostSocket && hostSocket.readyState === WebSocket.OPEN;
+      let isHostConnected =
+        hostSocket &&
+        (hostSocket.readyState === undefined || hostSocket.readyState === WebSocket.OPEN);
+      const isHostHuman = Array.from(this.players.values()).some(
+        (p) => p.id === this.hostClientId && !p.isBot
+      );
 
-      // If current host is disconnected, find first connected human player to assume host duties
-      if (!isHostConnected) {
-        for (const pPos of SEAT_ORDER) {
-          const participant = this.players.get(pPos);
-          if (
-            participant &&
-            !participant.isBot &&
-            this.clientSockets.has(participant.id) &&
-            this.clientSockets.get(participant.id)?.readyState === WebSocket.OPEN
-          ) {
-            for (const p of this.players.values()) {
-              p.isHost = false;
-            }
-            participant.isHost = true;
-            this.hostClientId = participant.id;
-            hostSocket = this.clientSockets.get(participant.id);
-            isHostConnected = true;
-            break;
-          }
-        }
-      }
-
-      if (isHostConnected && hostSocket) {
-        // Send Join Request to Host for approval
+      if (isHostConnected && hostSocket && isHostHuman) {
+        // Send Join Request to Human Host for approval
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
         this.pendingJoinRequests.set(requestId, {
           requestId,
@@ -463,8 +450,72 @@ export class GameRoom {
         } catch {}
 
         return { success: true, position: targetPos };
+      } else if (!isHostHuman) {
+        // Table is currently Bot-only (0 active humans). Admitted directly and promoted to Human Host!
+        this.clearSeatReservation(targetPos);
+        const seatId = POSITION_TO_SEAT[targetPos];
+        const newParticipant: RoomParticipant = {
+          id: clientId,
+          playerId: seatId,
+          name: incomingName,
+          position: targetPos,
+          isHost: true,
+          isReady: true,
+          isBot: false,
+        };
+        this.players.set(targetPos, newParticipant);
+        this.clientSockets.set(clientId, socket);
+        this.clientPositions.set(clientId, targetPos);
+        this.hostClientId = clientId;
+        RoomManager.getInstance().registerClientRoom(clientId, this.roomCode);
+
+        if (this.controller) {
+          this.controller.takeoverBotSeat(targetPos, clientId, incomingName);
+          const perspectiveState = this.controller.getPerspectiveState(targetPos);
+          const syncMsg: ServerMessage = {
+            type: 'MATCH_SYNC',
+            payload: {
+              roomCode: this.roomCode,
+              state: perspectiveState,
+              myPosition: PlayerPosition.SOUTH,
+              rawPosition: targetPos,
+            },
+          };
+          socket.send(JSON.stringify(syncMsg));
+
+          const currentTimer = this.controller.getCurrentTimer();
+          if (currentTimer) {
+            const clientIdx = SEAT_ORDER.indexOf(targetPos);
+            const rawIdx = SEAT_ORDER.indexOf(currentTimer.rawPosition);
+            const mappedIdx = (rawIdx - clientIdx + 4) % 4;
+            const mappedPos = SEAT_ORDER[mappedIdx];
+
+            const timerMsg: ServerMessage = {
+              type: 'TURN_TIMER',
+              payload: {
+                ...currentTimer,
+                position: mappedPos,
+              },
+            };
+            socket.send(JSON.stringify(timerMsg));
+          }
+        }
+
+        this.ensureHumanHost(false);
+        this.broadcastRoomState();
+        this.broadcastGameState();
+
+        this.broadcast({
+          type: 'TOAST_NOTIFICATION',
+          payload: {
+            message: `👑 ${incomingName} joined the table and is now Table Host.`,
+            type: 'success',
+          },
+        });
+
+        return { success: true, position: targetPos };
       } else {
-        // Host is disconnected/unavailable - host approval is required for running tables
+        // Host is temporarily disconnected/unavailable
         try {
           const errMsg: ServerMessage = {
             type: 'ERROR',
@@ -521,6 +572,7 @@ export class GameRoom {
     this.clientSockets.set(clientId, socket);
     this.clientPositions.set(clientId, openPosition);
 
+    this.ensureHumanHost(false);
     this.broadcastRoomState();
     return { success: true, position: openPosition };
   }
@@ -549,6 +601,88 @@ export class GameRoom {
         return true;
       }
     }
+    return false;
+  }
+
+  /**
+   * Authoritative Human-Host Invariant:
+   * RULE 1: If there is at least ONE connected/active Human participant in the room, the Host MUST be a Human.
+   * RULE 2: A Bot may be Host ONLY when ZERO Humans remain in the room.
+   * RULE 3: Host timeout causing Human → Bot conversion MUST immediately trigger Host transfer when another Human exists.
+   * RULE 4: Do not make a Bot Host while any Human is available.
+   * RULE 5: If Host disconnects/leaves, existing Host-transfer behavior must choose a Human when any Human remains.
+   * RULE 6: If Host times out: convert seat to Bot, immediately transfer host to remaining human if any exists.
+   */
+  public ensureHumanHost(notify: boolean = true): boolean {
+    // 1. Gather all currently active, connected Human participants in SEAT_ORDER
+    const connectedHumans: RoomParticipant[] = [];
+    for (const pos of SEAT_ORDER) {
+      const p = this.players.get(pos);
+      if (
+        p &&
+        !p.isBot &&
+        this.clientSockets.has(p.id) &&
+        (this.clientSockets.get(p.id)?.readyState === undefined ||
+          this.clientSockets.get(p.id)?.readyState === WebSocket.OPEN)
+      ) {
+        connectedHumans.push(p);
+      }
+    }
+
+    // 2. Check if current host is already one of the active connected humans
+    const currentHost = connectedHumans.find((p) => p.id === this.hostClientId && p.isHost);
+    if (currentHost) {
+      // Invariant satisfied. Ensure no other seat has isHost = true
+      for (const p of this.players.values()) {
+        if (p.id !== currentHost.id && p.isHost) {
+          p.isHost = false;
+        }
+      }
+      return false;
+    }
+
+    // 3. Current host is NOT an active connected human (e.g. isBot, disconnected, or timed out).
+    if (connectedHumans.length > 0) {
+      // Pick the first available human in canonical seat order
+      const newHost = connectedHumans[0];
+      for (const p of this.players.values()) {
+        p.isHost = false;
+      }
+      newHost.isHost = true;
+      this.hostClientId = newHost.id;
+
+      if (notify) {
+        const cleanName =
+          newHost.name
+            .replace(/\s*\(You\)$/i, '')
+            .replace(/\s*\(Host\)$/i, '')
+            .replace(/\s*\(Bot\)$/i, '')
+            .trim() || 'Player';
+
+        this.broadcast({
+          type: 'TOAST_NOTIFICATION',
+          payload: {
+            message: `👑 ${cleanName} is now the Table Host.`,
+            type: 'info',
+          },
+        });
+      }
+      return true;
+    }
+
+    // 4. ZERO connected humans remain in the room.
+    // A Bot may be Host ONLY when 0 humans remain.
+    let existingBotHost = Array.from(this.players.values()).find((p) => p.isHost);
+    if (!existingBotHost) {
+      const southBot = this.players.get(PlayerPosition.SOUTH) || Array.from(this.players.values())[0];
+      if (southBot) {
+        southBot.isHost = true;
+        this.hostClientId = southBot.id;
+      }
+    } else {
+      this.hostClientId = existingBotHost.id;
+    }
+
     return false;
   }
 
@@ -586,47 +720,8 @@ export class GameRoom {
     };
     this.players.set(pos, botParticipant);
 
-    // Rule 2: Deterministic Host Transfer Rule
-    // If the leaving player was the host, transfer isHost role to the lowest connected P# where isBot === false
-    if (wasHost) {
-      let nextHost: RoomParticipant | null = null;
-      for (const pPos of SEAT_ORDER) {
-        const participant = this.players.get(pPos);
-        if (
-          participant &&
-          !participant.isBot &&
-          participant.id !== clientId &&
-          this.clientSockets.has(participant.id) &&
-          this.clientSockets.get(participant.id)?.readyState === WebSocket.OPEN
-        ) {
-          nextHost = participant;
-          break;
-        }
-      }
-
-      if (nextHost) {
-        for (const p of this.players.values()) {
-          p.isHost = false;
-        }
-        nextHost.isHost = true;
-        this.hostClientId = nextHost.id;
-
-        const cleanNewHostName =
-          nextHost.name
-            .replace(/\s*\(You\)$/i, '')
-            .replace(/\s*\(Host\)$/i, '')
-            .replace(/\s*\(Bot\)$/i, '')
-            .trim() || 'Player';
-
-        this.broadcast({
-          type: 'TOAST_NOTIFICATION',
-          payload: {
-            message: `👑 ${cleanNewHostName} is now the Table Host.`,
-            type: 'info',
-          },
-        });
-      }
-    }
+    // Rule 2: Deterministic Host Transfer Rule - Enforce Human-Host Invariant immediately and atomically
+    this.ensureHumanHost(true);
 
     if (this.status === 'LOBBY') {
       this.broadcastRoomState();
@@ -874,6 +969,7 @@ export class GameRoom {
     // Register admitted player to room mapping
     RoomManager.getInstance().registerClientRoom(pending.clientId, this.roomCode);
 
+    this.ensureHumanHost(false);
     this.broadcastRoomState();
     this.broadcastGameState();
 
@@ -951,6 +1047,7 @@ export class GameRoom {
       },
     });
 
+    this.ensureHumanHost(true);
     this.broadcastRoomState();
     this.broadcastGameState();
 
@@ -1170,14 +1267,20 @@ export class GameRoom {
     this.unsubscribeTimeoutTakeover = this.controller.onTimeoutTakeover((pos) => {
       const participant = this.players.get(pos);
       if (participant && !participant.isBot) {
+        const wasHost = participant.isHost;
         participant.isBot = true;
         const cleanName = participant.name
           .replace(/\s*\(You\)$/i, '')
           .replace(/\s*\(Host\)$/i, '')
           .replace(/\s*\(Bot\)$/i, '')
           .trim();
+
+        // Enforce Human-Host Invariant immediately and atomically upon timeout
+        this.ensureHumanHost(true);
+
         this.broadcastRoomState();
-        const timeoutSec = participant.isHost ? 50 : 30;
+        this.broadcastGameState();
+        const timeoutSec = wasHost ? 50 : 30;
         this.broadcast({
           type: 'TOAST_NOTIFICATION',
           payload: {
@@ -1287,6 +1390,7 @@ export class GameRoom {
       },
     });
 
+    this.ensureHumanHost(false);
     this.broadcastRoomState();
     this.broadcastGameState();
     if (this.controller) {

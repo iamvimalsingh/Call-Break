@@ -8,7 +8,7 @@
 import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GameState } from '../../models/gameState';
-import { PlayerPosition } from '../../models/player';
+import { PlayerPosition, formatPlayerSeatIdentity } from '../../models/player';
 import { Trophy, ArrowRight, Layers, CheckCircle } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
@@ -113,7 +113,7 @@ export const RoundSummaryModal: React.FC<RoundSummaryModalProps> = ({
                     }`}
                   >
                     <td className="py-3 px-2 font-sans flex items-center gap-1.5">
-                      <span>{isSouth ? 'You' : player.name}</span>
+                      <span>{formatPlayerSeatIdentity(pos, isSouth ? 'You' : player.name)}</span>
                       {isSouth && (
                         <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-emerald-900/80 text-emerald-300 border border-emerald-700/80">
                           You
