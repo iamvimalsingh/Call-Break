@@ -149,13 +149,15 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     }
 
     const currentRoom = sharedMultiplayerClient.getRoomState();
-    if (currentRoom && currentRoom.roomCode) {
+    if (currentRoom && currentRoom.roomCode && activeTab !== 'create') {
       setRoomState(currentRoom);
       setRoomCode(currentRoom.roomCode);
       setHasJoinedRoom(true);
       if (currentRoom.totalRounds) {
         setTotalRounds(currentRoom.totalRounds === 10 ? 10 : 5);
       }
+    } else if (activeTab === 'create') {
+      setHasJoinedRoom(false);
     }
 
     sharedMultiplayerClient.connect().catch((err) => {
@@ -559,6 +561,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                   onClick={() => {
                     soundManager.play('click');
                     setActiveTab('create');
+                    setHasJoinedRoom(false);
                   }}
                   className={`py-2 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                     activeTab === 'create'
