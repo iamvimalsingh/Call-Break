@@ -60,6 +60,16 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
         const msg = JSON.parse(text) as ClientMessage;
 
         switch (msg.type) {
+          case 'GET_ACTIVE_ROOMS': {
+            const summaries = roomManager.getActiveRoomsSummary();
+            const activeRoomsMsg: ServerMessage = {
+              type: 'ACTIVE_ROOMS_LIST',
+              payload: summaries,
+            };
+            socket.send(JSON.stringify(activeRoomsMsg));
+            break;
+          }
+
           case 'CREATE_ROOM': {
             const { roomCode, playerName, totalRounds, playerId } = (msg.payload as any) || {};
             if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {

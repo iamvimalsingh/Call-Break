@@ -8,6 +8,7 @@ import { GameEvent } from '../../models/events';
 import { GameState } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
 import {
+  ActiveTableSummary,
   ClientMessage,
   ConnectionState,
   JoinRequestPayload,
@@ -19,6 +20,7 @@ import {
 } from '../../models/multiplayer';
 
 export type RoomStateListener = (roomState: RoomState) => void;
+export type ActiveRoomsListListener = (rooms: ActiveTableSummary[]) => void;
 export type GameStateListener = (data: {
   state: GameState;
   myPosition: PlayerPosition;
@@ -269,6 +271,7 @@ export class MultiplayerClient {
   private playerDisconnectedListeners: Set<PlayerDisconnectedListener> = new Set();
   private joinRequestListeners: Set<JoinRequestListener> = new Set();
   private joinRequestStatusListeners: Set<JoinRequestStatusListener> = new Set();
+  private activeRoomsListListeners: Set<ActiveRoomsListListener> = new Set();
 
   public static getInstance(): MultiplayerClient {
     if (!MultiplayerClient.instance) {
@@ -542,6 +545,10 @@ export class MultiplayerClient {
           this.roomStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
+        case 'ACTIVE_ROOMS_LIST':
+          this.activeRoomsListListeners.forEach((fn) => safeCall(fn, msg.payload));
+          break;
+
         case 'MATCH_STARTED':
         case 'GAME_STARTED':
           if (msg.payload?.roomCode) {
@@ -742,7 +749,18 @@ export class MultiplayerClient {
     setConfirmedSeat(null);
   }
 
+  public requestActiveRooms(): void {
+    this.send({
+      type: 'GET_ACTIVE_ROOMS',
+    });
+  }
+
   // Subscriptions
+  public onActiveRoomsList(listener: ActiveRoomsListListener): () => void {
+    this.activeRoomsListListeners.add(listener);
+    return () => this.activeRoomsListListeners.delete(listener);
+  }
+
   public onRoomState(listener: RoomStateListener): () => void {
     this.roomStateListeners.add(listener);
     if (this.currentRoomState) {

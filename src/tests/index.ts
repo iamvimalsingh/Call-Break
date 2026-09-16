@@ -24,6 +24,9 @@ import { buildCustomRoomIdTestSuite } from './customRoomId.test';
 import { buildPreferredRoomIdTestSuite } from './preferredRoomIdStorage.test';
 import { buildPlayerSeatPrefixTestSuite } from './playerSeatPrefix.test';
 import { buildHostLifecycleTestSuite } from './hostLifecycle.test';
+import { buildWaitingTableVsActiveMatchTestSuite } from './waitingTableVsActiveMatch.test';
+import { buildActiveTableDiscoveryTestSuite } from './activeTableDiscovery.test';
+import { buildJoinerWaitingRoomFlowTestSuite } from './joinerWaitingRoomFlow.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -47,6 +50,9 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildPreferredRoomIdTestSuite());
   composite.include(buildPlayerSeatPrefixTestSuite());
   composite.include(buildHostLifecycleTestSuite());
+  composite.include(buildWaitingTableVsActiveMatchTestSuite());
+  composite.include(buildActiveTableDiscoveryTestSuite());
+  composite.include(buildJoinerWaitingRoomFlowTestSuite());
   return composite;
 }
 

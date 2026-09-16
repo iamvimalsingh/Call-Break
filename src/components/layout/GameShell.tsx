@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { GameMode, GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
 import { Card } from '../../models/card';
-import { TurnTimerPayload, ToastPayload, JoinRequestPayload } from '../../models/multiplayer';
+import { TurnTimerPayload, ToastPayload, JoinRequestPayload, RoomState } from '../../models/multiplayer';
 import { sharedGameStore } from '../../core/state/gameStore';
 import { createInitialGameState } from '../../core/state/initialState';
 import { CallBreakRulesEngine } from '../../core/rules/CallBreakRulesEngine';
@@ -66,6 +66,7 @@ export const GameShell: React.FC = () => {
   const [pendingExitAction, setPendingExitAction] = useState<(() => void) | null>(null);
   const [isTableMenuOpen, setIsTableMenuOpen] = useState(false);
   const [roomCode, setRoomCode] = useState<string | null>(() => sharedMultiplayerClient.getRoomState()?.roomCode ?? null);
+  const [roomState, setRoomState] = useState<RoomState | null>(() => sharedMultiplayerClient.getRoomState());
   const [isHost, setIsHost] = useState<boolean>(() => {
     const r = sharedMultiplayerClient.getRoomState();
     return r ? r.hostId === r.myClientId : false;
@@ -160,13 +161,11 @@ export const GameShell: React.FC = () => {
 
     const unsubRoom = sharedMultiplayerClient.onRoomState((room) => {
       setRoomCode(room.roomCode);
+      setRoomState(room);
       setIsHost(room.hostId === room.myClientId);
       if (room.status === 'PLAYING') {
         setIsHomeOpen(false);
         setIsRoomLobbyOpen(false);
-      } else if (room.status === 'LOBBY') {
-        setIsHomeOpen(false);
-        setIsRoomLobbyOpen(true);
       }
     });
 
@@ -493,6 +492,33 @@ export const GameShell: React.FC = () => {
     sharedMultiplayerClient.submitBid(bid);
   }, []);
 
+  const isWaitingTable =
+    Boolean(roomCode) &&
+    (roomState?.status === 'LOBBY' ||
+      (gameState.status === GameStatus.IDLE && roomState?.status !== 'PLAYING'));
+
+  const isActiveMatch =
+    (gameState.status !== GameStatus.IDLE && gameState.status !== GameStatus.MATCH_FINISHED) ||
+    (Boolean(roomCode) && roomState?.status === 'PLAYING' && gameState.status !== GameStatus.MATCH_FINISHED);
+
+  const handleStartMatchFromLobbyOrMenu = useCallback(() => {
+    const currentRoom = sharedMultiplayerClient.getRoomState();
+    const autoFill = currentRoom?.autoFillBots ?? true;
+    const rounds = currentRoom?.totalRounds ?? 5;
+    soundManager.play('deal');
+    sharedMultiplayerClient.startMatch(autoFill, rounds);
+    setIsHomeOpen(false);
+    setIsTableMenuOpen(false);
+    setIsRoomLobbyOpen(false);
+  }, []);
+
+  const handleResumeWaitingTable = useCallback(() => {
+    setIsHomeOpen(false);
+    setIsTableMenuOpen(false);
+    setRoomLobbyTab('create');
+    setIsRoomLobbyOpen(true);
+  }, []);
+
   const isRoundSummaryOpen =
     gameState.status === GameStatus.ROUND_ENDED &&
     gameState.roundScores.some((r) => r.roundNumber === gameState.currentRound) &&
@@ -712,9 +738,13 @@ export const GameShell: React.FC = () => {
         onOpenStatistics={() => setIsStatisticsOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTutorial={() => setIsTutorialOpen(true)}
-        hasActiveGame={gameState.status !== GameStatus.IDLE}
-        activeGameRound={gameState.status !== GameStatus.IDLE ? gameState.currentRound : undefined}
+        hasActiveGame={isActiveMatch}
+        activeGameRound={isActiveMatch ? gameState.currentRound : undefined}
         onResumeGame={() => setIsHomeOpen(false)}
+        hasWaitingTable={isWaitingTable}
+        onResumeTable={handleResumeWaitingTable}
+        onStartGame={isHost ? handleStartMatchFromLobbyOrMenu : undefined}
+        isHost={isHost}
         isConnected={connectionState === 'OPEN'}
       />
 
@@ -844,6 +874,9 @@ export const GameShell: React.FC = () => {
             window.open(whatsappUrl, '_blank');
           }
         }}
+        isWaitingTable={isWaitingTable}
+        onResumeTable={handleResumeWaitingTable}
+        onStartGame={isHost ? handleStartMatchFromLobbyOrMenu : undefined}
       />
 
       {/* Leave Active Match Confirmation Guard Modal */}

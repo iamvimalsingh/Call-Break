@@ -5,7 +5,7 @@
 
 import { WebSocket } from 'ws';
 import { PlayerPosition } from '../../src/models/player';
-import { PlayerSeatId, RoomParticipant, RoomState, ServerMessage, TurnTimerPayload } from '../../src/models/multiplayer';
+import { ActiveTableSummary, PlayerSeatId, RoomParticipant, RoomState, ServerMessage, TurnTimerPayload } from '../../src/models/multiplayer';
 import { AuthoritativeGameController, PlayerSetupInfo } from './AuthoritativeGameController';
 import { Card } from '../../src/models/card';
 import { GameStatus } from '../../src/models/gameState';
@@ -1543,6 +1543,54 @@ export class GameRoom {
     this.clientPositions.clear();
     this.players.clear();
   }
+
+  public getPublicSummary(): ActiveTableSummary | null {
+    if (this.status === 'FINISHED') return null;
+
+    const playersList = Array.from(this.players.values());
+    const humanCount = playersList.filter((p) => !p.isBot).length;
+    const botCount = playersList.filter((p) => p.isBot).length;
+
+    // Full 4-human tables cannot accept new humans
+    if (humanCount >= 4) return null;
+
+    const hostParticipant =
+      playersList.find((p) => p.id === this.hostClientId && !p.isBot) ||
+      playersList.find((p) => p.isHost && !p.isBot) ||
+      playersList.find((p) => p.isHost) ||
+      playersList[0];
+    const hostName = hostParticipant ? hostParticipant.name : 'Host';
+
+    if (this.status === 'LOBBY') {
+      return {
+        roomCode: this.roomCode,
+        hostName,
+        humanCount,
+        totalSeats: 4,
+        status: 'WAITING',
+        currentRound: 1,
+        totalRounds: this.totalRounds || 5,
+        isJoinable: true,
+      };
+    }
+
+    if (this.status === 'PLAYING') {
+      if (botCount === 0) return null;
+      const currentRound = this.controller ? this.controller.getState().currentRound : 1;
+      return {
+        roomCode: this.roomCode,
+        hostName,
+        humanCount,
+        totalSeats: 4,
+        status: 'PLAYING',
+        currentRound,
+        totalRounds: this.totalRounds || 5,
+        isJoinable: true,
+      };
+    }
+
+    return null;
+  }
 }
 
 export class RoomManager {
@@ -1670,5 +1718,16 @@ export class RoomManager {
 
   public getRoom(roomCode: string): GameRoom | undefined {
     return this.rooms.get(normalizeRoomCode(roomCode));
+  }
+
+  public getActiveRoomsSummary(): ActiveTableSummary[] {
+    const summaries: ActiveTableSummary[] = [];
+    for (const room of this.rooms.values()) {
+      const summary = room.getPublicSummary();
+      if (summary) {
+        summaries.push(summary);
+      }
+    }
+    return summaries;
   }
 }

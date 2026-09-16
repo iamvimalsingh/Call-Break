@@ -46,6 +46,17 @@ export interface ToastPayload {
   type?: 'info' | 'warning' | 'success';
 }
 
+export interface ActiveTableSummary {
+  roomCode: string;
+  hostName: string;
+  humanCount: number;
+  totalSeats: number;
+  status: 'WAITING' | 'PLAYING';
+  currentRound: number;
+  totalRounds: number;
+  isJoinable: boolean;
+}
+
 export interface JoinRequestSeatOption {
   seat: PlayerPosition;
   seatId?: PlayerSeatId;
@@ -69,6 +80,7 @@ export interface JoinRequestStatusPayload {
 
 export type ClientMessage =
   | { type: 'CLIENT_READY'; payload?: { roomCode?: string } }
+  | { type: 'GET_ACTIVE_ROOMS' }
   | { type: 'CREATE_ROOM'; payload: { roomCode?: string; playerName?: string; totalRounds?: number; playerId?: string } }
   | { type: 'JOIN_ROOM'; payload: { roomCode: string; playerName?: string; playerId?: string } }
   | { type: 'RESPOND_JOIN_REQUEST'; payload: { requestId: string; accept: boolean; targetSeat?: PlayerPosition } }
@@ -87,6 +99,7 @@ export type ClientMessage =
 
 export type ServerMessage =
   | { type: 'ROOM_STATE'; payload: RoomState }
+  | { type: 'ACTIVE_ROOMS_LIST'; payload: ActiveTableSummary[] }
   | { type: 'MATCH_STARTED'; payload: { roomCode: string } }
   | { type: 'GAME_STARTED'; payload: { roomCode: string } }
   | { type: 'MATCH_SYNC'; payload: { roomCode: string; state: GameState; myPosition: PlayerPosition; rawPosition: PlayerPosition } }

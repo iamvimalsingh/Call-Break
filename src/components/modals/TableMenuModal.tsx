@@ -54,6 +54,9 @@ export interface TableMenuModalProps {
   onShareRoom?: () => void;
   onStartNewGame?: () => void;
   onOpenSettings?: () => void;
+  isWaitingTable?: boolean;
+  onResumeTable?: () => void;
+  onStartGame?: () => void;
 }
 
 export const TableMenuModal: React.FC<TableMenuModalProps> = ({
@@ -68,6 +71,9 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
   onShareRoom,
   onStartNewGame,
   onOpenSettings,
+  isWaitingTable = false,
+  onResumeTable,
+  onStartGame,
 }) => {
   const prefersReducedMotion = useReducedMotion();
   const { isMuted, toggleMute } = useSound();
@@ -237,21 +243,59 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
             </div>
           )}
 
-          {/* Primary Action: Resume Game */}
-          <div className="mb-3">
-            <button
-              type="button"
-              id="btn-menu-resume"
-              onClick={() => {
-                soundManager.play('click');
-                onClose();
-              }}
-              className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer transition-all"
-            >
-              <Play className="w-4 h-4 fill-white" />
-              <span>Resume Game</span>
-            </button>
-          </div>
+          {/* Primary Action: Resume Game vs Resume Table / Start Game */}
+          {isWaitingTable ? (
+            <div className="mb-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-menu-resume"
+                  onClick={() => {
+                    soundManager.play('click');
+                    if (onResumeTable) {
+                      onResumeTable();
+                    } else {
+                      onClose();
+                    }
+                  }}
+                  className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/40 cursor-pointer transition-all"
+                >
+                  <Users className="w-4 h-4 text-stone-950" />
+                  <span>Resume Table</span>
+                </button>
+
+                {isHost && onStartGame && (
+                  <button
+                    type="button"
+                    id="btn-menu-start-game"
+                    onClick={() => {
+                      soundManager.play('deal');
+                      onStartGame();
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/50 cursor-pointer transition-all"
+                  >
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>Start Game</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <button
+                type="button"
+                id="btn-menu-resume"
+                onClick={() => {
+                  soundManager.play('click');
+                  onClose();
+                }}
+                className="w-full py-2.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer transition-all"
+              >
+                <Play className="w-4 h-4 fill-white" />
+                <span>Resume Game</span>
+              </button>
+            </div>
+          )}
 
           {/* Table Seats & Players Roster */}
           <div className="mb-3 p-3 rounded-2xl bg-stone-950/60 border border-stone-800/90 text-left">

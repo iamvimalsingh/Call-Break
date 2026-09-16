@@ -35,7 +35,7 @@ import {
   getPreferredRoomId,
   setPreferredRoomId,
 } from '../../services/multiplayer/MultiplayerClient';
-import { ConnectionState, RoomParticipant, RoomState } from '../../models/multiplayer';
+import { ActiveTableSummary, ConnectionState, RoomParticipant, RoomState } from '../../models/multiplayer';
 import { PlayerPosition } from '../../models/player';
 
 export interface RoomLobbyModalProps {
@@ -87,8 +87,16 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [pendingApprovalMsg, setPendingApprovalMsg] = useState<string | null>(null);
-  const [roomState, setRoomState] = useState<RoomState | null>(null);
-  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+  const [showActiveTables, setShowActiveTables] = useState(false);
+  const [activeTables, setActiveTables] = useState<ActiveTableSummary[]>([]);
+  const [isLoadingActiveTables, setIsLoadingActiveTables] = useState(false);
+  const [roomState, setRoomState] = useState<RoomState | null>(() =>
+    sharedMultiplayerClient.getRoomState()
+  );
+  const [hasJoinedRoom, setHasJoinedRoom] = useState<boolean>(() => {
+    const existing = sharedMultiplayerClient.getRoomState();
+    return Boolean(existing && existing.roomCode);
+  });
   const [connectionState, setConnectionState] = useState<ConnectionState>(() =>
     sharedMultiplayerClient.getConnectionState()
   );
@@ -135,6 +143,16 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       return;
     }
 
+    const currentRoom = sharedMultiplayerClient.getRoomState();
+    if (currentRoom && currentRoom.roomCode) {
+      setRoomState(currentRoom);
+      setRoomCode(currentRoom.roomCode);
+      setHasJoinedRoom(true);
+      if (currentRoom.totalRounds) {
+        setTotalRounds(currentRoom.totalRounds === 10 ? 10 : 5);
+      }
+    }
+
     sharedMultiplayerClient.connect().catch((err) => {
       console.error('Failed to connect to multiplayer server:', err);
     });
@@ -153,14 +171,11 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       if (state.totalRounds) {
         setTotalRounds(state.totalRounds === 10 ? 10 : 5);
       }
-      if (activeTab === 'join' && isJoining) {
-        setIsJoining(false);
-        setHasJoinedRoom(true);
-        setJoinError(null);
-      }
-      if (activeTab === 'create') {
-        setHasJoinedRoom(true);
-        setJoinError(null);
+      setIsJoining(false);
+      setHasJoinedRoom(true);
+      setJoinError(null);
+      setPendingApprovalMsg(null);
+      if (state.hostId === state.myClientId || activeTab === 'create') {
         // Only after successful room creation: save the created custom Room ID
         setPreferredRoomId(state.roomCode);
       }
@@ -209,12 +224,18 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       }
     });
 
+    const unsubActiveRooms = sharedMultiplayerClient.onActiveRoomsList((tables) => {
+      setActiveTables(tables);
+      setIsLoadingActiveTables(false);
+    });
+
     return () => {
       unsubConn();
       unsubRoom();
       unsubGameStarted();
       unsubError();
       unsubJoinStatus();
+      unsubActiveRooms();
     };
   }, [isOpen, activeTab]);
 
@@ -336,6 +357,31 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     sharedMultiplayerClient.joinRoom(clean, playerName.trim());
   };
 
+  const handleToggleActiveTables = () => {
+    soundManager.play('click');
+    const nextState = !showActiveTables;
+    setShowActiveTables(nextState);
+    if (nextState) {
+      setIsLoadingActiveTables(true);
+      sharedMultiplayerClient.requestActiveRooms();
+    }
+  };
+
+  const handleRefreshActiveTables = () => {
+    soundManager.play('click');
+    setIsLoadingActiveTables(true);
+    sharedMultiplayerClient.requestActiveRooms();
+  };
+
+  const handleSelectActiveTable = (code: string) => {
+    soundManager.play('click');
+    setJoinInputCode(code);
+    setJoinError(null);
+    setIsJoining(true);
+    soundManager.play('deal');
+    sharedMultiplayerClient.joinRoom(code, playerName.trim());
+  };
+
   const handleStartCreatedRoom = () => {
     if (connectionState !== 'OPEN') return;
     soundManager.play('deal');
@@ -346,6 +392,9 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     sharedMultiplayerClient.leaveRoom();
     setHasJoinedRoom(false);
     setRoomState(null);
+    setIsJoining(false);
+    setJoinError(null);
+    setPendingApprovalMsg(null);
     soundManager.play('click');
   };
 
@@ -573,12 +622,15 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     type="text"
                     id="input-create-room-code"
                     value={roomCode}
+                    readOnly={hasJoinedRoom}
                     onChange={(e) => {
+                      if (hasJoinedRoom) return;
                       const clean = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
                       setRoomCode(clean);
                       setJoinError(null);
                     }}
                     onKeyDown={(e) => {
+                      if (hasJoinedRoom) return;
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         handleApplyCustomRoomCode();
@@ -1036,7 +1088,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                   className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center gap-2 text-stone-300 text-xs font-semibold"
                 >
                   <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-                  <span>Waiting for host to start...</span>
+                  <span>Waiting for host to start the game</span>
                 </div>
               )}
             </div>
@@ -1134,6 +1186,89 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                   </>
                 )}
               </button>
+
+              {/* Active Tables Discovery Section */}
+              <div className="pt-2 border-t border-stone-800/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    id="btn-see-active-tables"
+                    onClick={handleToggleActiveTables}
+                    className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1.5 cursor-pointer transition-colors py-1"
+                  >
+                    <Users className="w-3.5 h-3.5 text-amber-400" />
+                    <span>{showActiveTables ? 'Hide Active Tables' : 'See Active Tables'}</span>
+                  </button>
+
+                  {showActiveTables && (
+                    <button
+                      type="button"
+                      id="btn-refresh-active-tables"
+                      onClick={handleRefreshActiveTables}
+                      disabled={isLoadingActiveTables}
+                      className="p-1 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Refresh active tables"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingActiveTables ? 'animate-spin text-amber-400' : ''}`} />
+                    </button>
+                  )}
+                </div>
+
+                {showActiveTables && (
+                  <div id="active-tables-container" className="p-3 rounded-2xl bg-stone-950/90 border border-stone-800 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-stone-400 font-semibold px-2 pb-1 border-b border-stone-800/80">
+                      <span className="w-16">ID</span>
+                      <span className="flex-1 text-left px-2">HOST</span>
+                      <span className="w-16 text-center">HUMANS</span>
+                      <span className="w-20 text-right">STATUS</span>
+                    </div>
+
+                    {isLoadingActiveTables && activeTables.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-stone-400 flex items-center justify-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+                        <span>Scanning active tables...</span>
+                      </div>
+                    ) : activeTables.length === 0 ? (
+                      <div id="no-active-tables-msg" className="py-4 text-center text-xs text-stone-400">
+                        No active tables available.
+                      </div>
+                    ) : (
+                      <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
+                        {activeTables.map((table) => (
+                          <button
+                            key={table.roomCode}
+                            type="button"
+                            id={`active-table-row-${table.roomCode}`}
+                            onClick={() => handleSelectActiveTable(table.roomCode)}
+                            className="w-full flex items-center justify-between px-2 py-2 rounded-xl bg-stone-900/80 hover:bg-amber-950/40 hover:border-amber-700/60 border border-stone-800 text-xs font-medium cursor-pointer transition-all text-left group"
+                          >
+                            <span className="w-16 font-mono font-bold text-amber-400 group-hover:text-amber-300">
+                              {table.roomCode}
+                            </span>
+                            <span className="flex-1 text-left px-2 text-stone-200 truncate">
+                              {table.hostName}
+                            </span>
+                            <span className="w-16 text-center font-mono text-stone-300">
+                              {table.humanCount}/{table.totalSeats}
+                            </span>
+                            <span className="w-20 text-right">
+                              <span
+                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${
+                                  table.status === 'WAITING'
+                                    ? 'bg-amber-950/80 border border-amber-600/60 text-amber-300'
+                                    : 'bg-emerald-950/80 border border-emerald-600/60 text-emerald-300'
+                                }`}
+                              >
+                                {table.status}
+                              </span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </form>
           )}
 

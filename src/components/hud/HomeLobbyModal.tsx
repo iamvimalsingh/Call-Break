@@ -37,6 +37,10 @@ export interface HomeLobbyModalProps {
   hasActiveGame?: boolean;
   activeGameRound?: number;
   onResumeGame?: () => void;
+  hasWaitingTable?: boolean;
+  onResumeTable?: () => void;
+  onStartGame?: () => void;
+  isHost?: boolean;
   isConnected: boolean;
 }
 
@@ -53,6 +57,10 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
   hasActiveGame = false,
   activeGameRound,
   onResumeGame,
+  hasWaitingTable = false,
+  onResumeTable,
+  onStartGame,
+  isHost = false,
   isConnected,
 }) => {
   const prefersReducedMotion = useReducedMotion();
@@ -97,8 +105,43 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
 
         {/* Actions Menu */}
         <div className="w-full space-y-2.5">
-          {/* Active Live Game Return Action */}
-          {hasActiveGame && onResumeGame && (
+          {/* Waiting Table Actions (Match has NOT started yet) */}
+          {hasWaitingTable && onResumeTable && (
+            <div className="w-full space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-lobby-resume-table"
+                  onClick={() => {
+                    soundManager.play('click');
+                    onResumeTable();
+                  }}
+                  className="flex-1 py-3 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-stone-950 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/40 transition-all cursor-pointer"
+                >
+                  <Users className="w-4 h-4 text-stone-950" />
+                  <span>Resume Table</span>
+                </button>
+
+                {isHost && onStartGame && (
+                  <button
+                    type="button"
+                    id="btn-lobby-start-game"
+                    onClick={() => {
+                      soundManager.play('deal');
+                      onStartGame();
+                    }}
+                    className="flex-1 py-3 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/50 transition-all cursor-pointer"
+                  >
+                    <Play className="w-4 h-4 fill-current text-white" />
+                    <span>Start Game</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Active Live Game Return Action (Match IS playing) */}
+          {hasActiveGame && !hasWaitingTable && onResumeGame && (
             <button
               type="button"
               id="btn-lobby-resume-game"
@@ -109,7 +152,7 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
               className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"
             >
               <Play className="w-4 h-4 fill-current text-white" />
-              <span>Return to Live Table {activeGameRound ? `(Round ${activeGameRound})` : ''}</span>
+              <span>Resume Game {activeGameRound ? `(Round ${activeGameRound})` : ''}</span>
             </button>
           )}
 
