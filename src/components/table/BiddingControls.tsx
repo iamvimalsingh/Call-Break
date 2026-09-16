@@ -33,11 +33,43 @@ export const BiddingControls: React.FC<BiddingControlsProps> = ({
   expectedBidderName,
   ruleCoachEnabled = true,
 }) => {
-  const [selectedBid, setSelectedBid] = useState<number>(() => {
-    return humanPlayer.currentBid ?? 2;
-  });
+  const defaultBid = Math.max(minBid, Math.min(humanPlayer.currentBid ?? 2, maxBid));
+  const handKey = (humanPlayer.hand ?? []).map((c) => c.id || `${c.suit}_${c.rank}`).sort().join(',');
+
+  const [prevHandKey, setPrevHandKey] = useState<string>(handKey);
+  const [prevBid, setPrevBid] = useState<number | null>(humanPlayer.currentBid);
+  const [selectedBid, setSelectedBid] = useState<number>(defaultBid);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [prevTurn, setPrevTurn] = useState<boolean>(isHumanTurn);
   const prefersReducedMotion = useReducedMotion();
+
+  // Detect transition into a fresh bidding cycle (re-deal or new round)
+  const isHandRedealt = prevHandKey !== '' && handKey !== '' && handKey !== prevHandKey;
+  const isBidsReset = prevBid !== null && humanPlayer.currentBid === null;
+  const isCycleChanged = isHandRedealt || isBidsReset;
+
+  if (isCycleChanged || (prevHandKey === '' && handKey !== '')) {
+    setPrevHandKey(handKey);
+    setPrevBid(humanPlayer.currentBid);
+    setSelectedBid(defaultBid);
+    setIsSubmitting(false);
+  } else if (prevBid !== humanPlayer.currentBid) {
+    setPrevBid(humanPlayer.currentBid);
+    if (humanPlayer.currentBid !== null) {
+      setIsSubmitting(false);
+    }
+  }
+
+  // Safety: If turn transitions to human and no bid is placed in authoritative state,
+  // ensure submission state is cleanly unlocked.
+  if (!prevTurn && isHumanTurn) {
+    setPrevTurn(true);
+    if (humanPlayer.currentBid === null && isSubmitting) {
+      setIsSubmitting(false);
+    }
+  } else if (prevTurn && !isHumanTurn) {
+    setPrevTurn(false);
+  }
 
   const bidOptions = Array.from({ length: maxBid - minBid + 1 }, (_, i) => minBid + i);
 

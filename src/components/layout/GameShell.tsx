@@ -15,7 +15,7 @@ import { TurnTimerPayload, ToastPayload, JoinRequestPayload } from '../../models
 import { sharedGameStore } from '../../core/state/gameStore';
 import { createInitialGameState } from '../../core/state/initialState';
 import { CallBreakRulesEngine } from '../../core/rules/CallBreakRulesEngine';
-import { sharedMultiplayerClient, getActiveTableId } from '../../services/multiplayer/MultiplayerClient';
+import { sharedMultiplayerClient, getActiveTableId, setActiveTableId } from '../../services/multiplayer/MultiplayerClient';
 import { TableTopBar } from '../hud/TableTopBar';
 import { GameTable } from '../table/GameTable';
 import { ScoreBoardModal } from '../hud/ScoreBoardModal';
@@ -50,6 +50,14 @@ export const GameShell: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isFinalResultOpen, setIsFinalResultOpen] = useState(false);
+  const [isMatchResultDismissed, setIsMatchResultDismissed] = useState(false);
+
+  // Reset match result dismissal when leaving MATCH_FINISHED state
+  useEffect(() => {
+    if (gameState.status !== GameStatus.MATCH_FINISHED) {
+      setIsMatchResultDismissed(false);
+    }
+  }, [gameState.status]);
   const [isRoomLobbyOpen, setIsRoomLobbyOpen] = useState(false);
   const [roomLobbyTab, setRoomLobbyTab] = useState<'create' | 'join'>('create');
   const [prefilledRoomCode, setPrefilledRoomCode] = useState<string>('');
@@ -380,16 +388,83 @@ export const GameShell: React.FC = () => {
   }, []);
 
   const handlePlayAgain = useCallback(() => {
-    if (isHost) {
-      sharedMultiplayerClient.rematch();
-    } else {
+    soundManager.play('click');
+    const effectiveIsHost = isHost || sharedMultiplayerClient.isHost();
+
+    // Trigger existing authoritative multiplayer rematch
+    sharedMultiplayerClient.rematch();
+
+    if (!effectiveIsHost) {
       setToast({
         id: Date.now().toString(),
-        message: 'Waiting for room host to start the rematch...',
+        message: 'Rematch requested. Waiting for room host to start rematch...',
         type: 'info',
       });
     }
+
+    // Close MatchResultModal immediately
+    setIsMatchResultDismissed(true);
+    setIsFinalResultOpen(false);
   }, [isHost]);
+
+  const handleReturnToRoom = useCallback(() => {
+    soundManager.play('click');
+    // Close MatchResultModal immediately
+    setIsMatchResultDismissed(true);
+    setIsFinalResultOpen(false);
+
+    // Synchronize room state and host status
+    const currentRoom = sharedMultiplayerClient.getRoomState();
+    if (currentRoom) {
+      setRoomCode(currentRoom.roomCode);
+      setIsHost(currentRoom.hostId === currentRoom.myClientId || sharedMultiplayerClient.isHost());
+    }
+  }, []);
+
+  const handleReturnHome = useCallback(() => {
+    soundManager.play('click');
+    // Close MatchResultModal immediately
+    setIsMatchResultDismissed(true);
+    setIsFinalResultOpen(false);
+
+    // Cleanly exit current active table via socket leave command
+    if (sharedMultiplayerClient.isConnected() || roomCode) {
+      sharedMultiplayerClient.leaveRoom();
+    }
+
+    // Remove player's active table association
+    setActiveTableId(null);
+
+    // Reset shared store to clean IDLE state in ONLINE_MULTIPLAYER mode
+    sharedGameStore.setState(() => ({
+      ...createInitialGameState(GameMode.ONLINE_MULTIPLAYER),
+      status: GameStatus.IDLE,
+      mode: GameMode.ONLINE_MULTIPLAYER,
+    }));
+
+    setRoomCode(null);
+    setIsHost(false);
+    setTurnTimer(null);
+
+    // Close in-table modals
+    setIsRulesOpen(false);
+    setIsScoreboardOpen(false);
+    setIsHistoryOpen(false);
+    setIsStatisticsOpen(false);
+    setIsSettingsOpen(false);
+    setIsInspectorOpen(false);
+    setIsTutorialOpen(false);
+    setIsTableMenuOpen(false);
+    setIsRoomLobbyOpen(false);
+
+    // Return to the main menu/entry screen
+    setIsHomeOpen(true);
+  }, [roomCode]);
+
+  const handleViewScoreboard = useCallback(() => {
+    soundManager.play('click');
+    setIsScoreboardOpen(true);
+  }, []);
 
   const handleStartRoomMatch = useCallback(
     (_roomCode: string, _isHost: boolean, _autoFillBots: boolean) => {
@@ -423,7 +498,9 @@ export const GameShell: React.FC = () => {
     gameState.roundScores.some((r) => r.roundNumber === gameState.currentRound) &&
     !isFinalResultOpen;
 
-  const isMatchFinished = gameState.status === GameStatus.MATCH_FINISHED || isFinalResultOpen;
+  const isMatchFinished =
+    (gameState.status === GameStatus.MATCH_FINISHED && !isMatchResultDismissed) ||
+    isFinalResultOpen;
 
   return (
     <div className="min-h-screen h-[100dvh] w-full max-w-full overflow-hidden bg-stone-950 text-stone-100 flex flex-col justify-between select-none antialiased">
@@ -692,7 +769,10 @@ export const GameShell: React.FC = () => {
         state={gameState}
         onNextRound={handleNextRound}
         onOpenScorecard={() => setIsScoreboardOpen(true)}
-        onViewFinalResult={() => setIsFinalResultOpen(true)}
+        onViewFinalResult={() => {
+          setIsMatchResultDismissed(false);
+          setIsFinalResultOpen(true);
+        }}
       />
 
       {/* Final Match Finished Screen Modal with Rematch Flow */}
@@ -702,16 +782,14 @@ export const GameShell: React.FC = () => {
         roomCode={roomCode}
         onStartNewMatch={() => guardActiveMatch(handleCreateNewTable)}
         onPlayAgain={handlePlayAgain}
-        onReturnToRoom={() => {
+        onReturnToRoom={handleReturnToRoom}
+        onOpenHome={handleReturnHome}
+        onOpenHistory={handleViewScoreboard}
+        onViewScoreboard={handleViewScoreboard}
+        onClose={() => {
+          setIsMatchResultDismissed(true);
           setIsFinalResultOpen(false);
-          setRoomLobbyTab('create');
-          setIsRoomLobbyOpen(true);
         }}
-        onOpenHome={() => {
-          setIsFinalResultOpen(false);
-          setIsHomeOpen(true);
-        }}
-        onOpenHistory={() => setIsHistoryOpen(true)}
       />
 
       {/* Scoreboard Matrix Modal */}

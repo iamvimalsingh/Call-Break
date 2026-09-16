@@ -10,7 +10,7 @@ import React, { useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GameMode, GameState } from '../../models/gameState';
 import { PlayerPosition } from '../../models/player';
-import { Trophy, RotateCcw, Award, Sparkles, Home, History, Users } from 'lucide-react';
+import { Trophy, RotateCcw, Award, Sparkles, Home, History, Users, X } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
@@ -23,7 +23,9 @@ export interface MatchResultModalProps {
   onPlayAgain?: () => void;
   onReturnToRoom?: () => void;
   onOpenHistory?: () => void;
+  onViewScoreboard?: () => void;
   onOpenHome?: () => void;
+  onClose?: () => void;
 }
 
 export const MatchResultModal: React.FC<MatchResultModalProps> = ({
@@ -34,7 +36,9 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   onPlayAgain,
   onReturnToRoom,
   onOpenHistory,
+  onViewScoreboard,
   onOpenHome,
+  onClose,
 }) => {
   const prefersReducedMotion = useReducedMotion();
 
@@ -46,6 +50,8 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleHistoryClick = onViewScoreboard || onOpenHistory;
 
   const result = state.matchResult;
   const positions = [
@@ -90,6 +96,20 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
         className="w-full max-w-xl max-h-[calc(100dvh-1rem)] sm:max-h-[min(90dvh,880px)] bg-gradient-to-b from-stone-900/98 via-stone-900/95 to-stone-950/98 border border-emerald-500/50 rounded-2xl sm:rounded-3xl shadow-[0_30px_90px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden text-stone-200 ring-1 ring-emerald-500/25"
       >
         {/* Scrollable Result Content Container */}
+        {onClose && (
+          <button
+            type="button"
+            id="btn-close-match-result"
+            onClick={() => {
+              soundManager.play('click');
+              onClose();
+            }}
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 w-8 h-8 rounded-full bg-stone-800/80 hover:bg-stone-700 active:bg-stone-900 text-stone-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            aria-label="Close match result modal"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y custom-scrollbar">
           {/* Match Winner Hero Banner */}
           <div className="p-5 sm:p-8 bg-gradient-to-b from-emerald-950/90 via-stone-900/95 to-stone-900 text-center border-b border-stone-800/90 relative overflow-hidden">
@@ -247,29 +267,36 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
       </div>
 
       {/* Fixed/Sticky Action Footer */}
-      <div className="shrink-0 p-3 sm:p-5 border-t border-stone-800/90 bg-stone-950/95 backdrop-blur-sm flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-5">
+      <div className="shrink-0 relative z-20 p-3 sm:p-5 border-t border-stone-800/90 bg-stone-950/95 backdrop-blur-sm flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-5">
         <div className="flex items-center gap-2 flex-wrap">
           {onOpenHome && (
             <button
               type="button"
               id="btn-match-return-home"
-              onClick={onOpenHome}
-              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              onClick={() => {
+                soundManager.play('click');
+                onOpenHome();
+              }}
+              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-stone-900 text-stone-200 font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               title="Return to Main Menu"
             >
               <Home className="w-4 h-4 text-stone-300" />
               <span>Main Menu</span>
             </button>
           )}
-          {onOpenHistory && (
+          {handleHistoryClick && (
             <button
               type="button"
               id="btn-match-view-history"
-              onClick={onOpenHistory}
-              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              onClick={() => {
+                soundManager.play('click');
+                handleHistoryClick();
+              }}
+              className="px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-stone-900 text-stone-300 font-medium text-xs sm:text-sm flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              title="View Scoreboard / History"
             >
               <History className="w-4 h-4 text-amber-400" />
-              <span className="hidden xs:inline">Match History</span>
+              <span>Scoreboard</span>
             </button>
           )}
         </div>
@@ -279,9 +306,12 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
             <button
               type="button"
               id="btn-match-return-room"
-              onClick={onReturnToRoom}
-              className="px-4 py-2 sm:py-2.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 text-amber-300 border border-amber-800/80 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-              title="Return to Multiplayer Room Lobby"
+              onClick={() => {
+                soundManager.play('click');
+                onReturnToRoom();
+              }}
+              className="px-4 py-2 sm:py-2.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 active:bg-amber-950 text-amber-300 border border-amber-800/80 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              title="Return to Table Room Lobby"
             >
               <Users className="w-4 h-4 text-amber-400" />
               <span>Return to Room</span>
@@ -291,7 +321,10 @@ export const MatchResultModal: React.FC<MatchResultModalProps> = ({
           <motion.button
             type="button"
             id="btn-match-play-again"
-            onClick={onPlayAgain || onStartNewMatch}
+            onClick={() => {
+              soundManager.play('click');
+              (onPlayAgain || onStartNewMatch)();
+            }}
             whileHover={!prefersReducedMotion ? { scale: 1.03 } : undefined}
             whileTap={!prefersReducedMotion ? { scale: 0.97 } : undefined}
             className="w-full sm:w-auto px-5 sm:px-6 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 active:to-emerald-600 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/35 transition-all cursor-pointer"

@@ -28,10 +28,12 @@ import { GameStateStore } from '../../src/core/state/gameStore';
 import { LocalGameController } from '../../src/core/controller/LocalGameController';
 import { createInitialGameState } from '../../src/core/state/initialState';
 
-// Standard active turn timers: 20s main action time + 10s extra time.
+// Standard active turn timers: 45s main action time + 15s extra time (60s total).
+// The host receives an additional 20s extra time allowance (80s total).
 // The 45-second timer is strictly reserved for the disconnect/reconnect window in RoomManager.
-export const MAIN_TURN_SECONDS = 20;
-export const EXTRA_TURN_SECONDS = 10;
+export const MAIN_TURN_SECONDS = 45;
+export const EXTRA_TURN_SECONDS = 15;
+export const HOST_EXTRA_TURN_SECONDS = 20;
 
 const POSITIONS: readonly PlayerPosition[] = [
   PlayerPosition.SOUTH,
@@ -64,6 +66,7 @@ export class AuthoritativeGameController {
   private isExtraTime: boolean = false;
   private isMatchTurnProgressionStarted: boolean = false;
   private unsubscribeStore: (() => void) | null = null;
+  private hostPositionProvider: ((position: PlayerPosition) => boolean) | null = null;
 
   constructor() {
     this.store = new GameStateStore(createInitialGameState(GameMode.ONLINE_MULTIPLAYER));
@@ -149,6 +152,34 @@ export class AuthoritativeGameController {
       const idx = this.timeoutTakeoverListeners.indexOf(listener);
       if (idx >= 0) this.timeoutTakeoverListeners.splice(idx, 1);
     };
+  }
+
+  /**
+   * Sets the authoritative host check provider from RoomManager.
+   */
+  public setHostPositionProvider(provider: ((position: PlayerPosition) => boolean) | null): void {
+    this.hostPositionProvider = provider;
+  }
+
+  /**
+   * Checks whether the specified position is the authoritative human host.
+   * A bot can NEVER be considered a host human.
+   */
+  public isHostPosition(position: PlayerPosition): boolean {
+    const player = this.store.getState().players[position];
+    if (!player || player.type === PlayerType.BOT) {
+      return false;
+    }
+    return this.hostPositionProvider ? this.hostPositionProvider(position) : false;
+  }
+
+  /**
+   * Returns extra turn duration: 15s for normal players, 35s (15s + 20s) for the human host.
+   */
+  public getExtraTurnSeconds(position: PlayerPosition): number {
+    return this.isHostPosition(position)
+      ? EXTRA_TURN_SECONDS + HOST_EXTRA_TURN_SECONDS
+      : EXTRA_TURN_SECONDS;
   }
 
   private notifyTimeoutTakeover(position: PlayerPosition): void {
@@ -355,7 +386,10 @@ export class AuthoritativeGameController {
   }
 
   /**
-   * Starts or restarts the 45s + 15s turn timer for the given active human player.
+   * Starts or restarts the turn timer for the given active human player:
+   * Main time: 45s
+   * Extra time: 15s (Non-host) or 35s (Host, which is 15s + 20s)
+   * Total allowance: 60s (Non-host) or 80s (Host)
    */
   private startTurnTimer(position: PlayerPosition): void {
     this.clearTurnTimer();
@@ -372,16 +406,24 @@ export class AuthoritativeGameController {
         if (this.remainingSeconds > 0) {
           this.broadcastTimerTick(position, this.remainingSeconds, MAIN_TURN_SECONDS, false);
         } else {
-          // 45s main time expired -> activate 15s Extra Time
+          // 45s main time expired -> activate Extra Time
+          // (15s for non-host human, 35s for host human)
           this.isExtraTime = true;
-          this.remainingSeconds = EXTRA_TURN_SECONDS;
-          this.broadcastTimerTick(position, EXTRA_TURN_SECONDS, EXTRA_TURN_SECONDS, true);
+          const extraSeconds = this.getExtraTurnSeconds(position);
+          this.remainingSeconds = extraSeconds;
+          this.broadcastTimerTick(position, extraSeconds, extraSeconds, true);
         }
       } else {
+        const extraSeconds = this.getExtraTurnSeconds(position);
+        // If host role was transferred mid-extra-time, clamp remainingSeconds immediately
+        if (this.remainingSeconds > extraSeconds) {
+          this.remainingSeconds = extraSeconds;
+        }
+
         if (this.remainingSeconds > 0) {
-          this.broadcastTimerTick(position, this.remainingSeconds, EXTRA_TURN_SECONDS, true);
+          this.broadcastTimerTick(position, this.remainingSeconds, extraSeconds, true);
         } else {
-          // 15s extra time expired (Total 60s elapsed) -> Auto-timeout move
+          // Extra time expired (Total 60s for non-host, 80s for host) -> Auto-timeout move
           this.clearTurnTimer();
           this.handleTurnTimeout(position);
         }
@@ -585,11 +627,15 @@ export class AuthoritativeGameController {
     if (!this.currentTimerPlayer || this.remainingSeconds <= 0) {
       return null;
     }
+    const totalSec = this.isExtraTime
+      ? this.getExtraTurnSeconds(this.currentTimerPlayer)
+      : MAIN_TURN_SECONDS;
+
     return {
       position: this.currentTimerPlayer,
       rawPosition: this.currentTimerPlayer,
       remainingSec: this.remainingSeconds,
-      totalSec: this.isExtraTime ? EXTRA_TURN_SECONDS : MAIN_TURN_SECONDS,
+      totalSec,
       isExtraTime: this.isExtraTime,
     };
   }

@@ -1133,6 +1133,10 @@ export class GameRoom {
 
     // Initialize Authoritative Controller
     this.controller = new AuthoritativeGameController();
+    this.controller.setHostPositionProvider((pos: PlayerPosition) => {
+      const participant = this.players.get(pos);
+      return !!participant && participant.isHost && !participant.isBot;
+    });
 
     this.unsubscribeEvents = this.controller.onEvent((event) => {
       this.broadcast({
@@ -1173,10 +1177,11 @@ export class GameRoom {
           .replace(/\s*\(Bot\)$/i, '')
           .trim();
         this.broadcastRoomState();
+        const timeoutSec = participant.isHost ? 80 : 60;
         this.broadcast({
           type: 'TOAST_NOTIFICATION',
           payload: {
-            message: `⏱️ ${cleanName || 'Player'} timed out (60s). Auto-play Bot took over seat.`,
+            message: `⏱️ ${cleanName || 'Player'} timed out (${timeoutSec}s). Auto-play Bot took over seat.`,
             type: 'info',
           },
         });
@@ -1284,6 +1289,12 @@ export class GameRoom {
 
     this.broadcastRoomState();
     this.broadcastGameState();
+    if (this.controller) {
+      const activeTimer = this.controller.getCurrentTimer();
+      if (activeTimer) {
+        this.broadcastTimer(activeTimer);
+      }
+    }
     return { success: true };
   }
 
