@@ -1177,7 +1177,7 @@ export class GameRoom {
           .replace(/\s*\(Bot\)$/i, '')
           .trim();
         this.broadcastRoomState();
-        const timeoutSec = participant.isHost ? 80 : 60;
+        const timeoutSec = participant.isHost ? 50 : 30;
         this.broadcast({
           type: 'TOAST_NOTIFICATION',
           payload: {

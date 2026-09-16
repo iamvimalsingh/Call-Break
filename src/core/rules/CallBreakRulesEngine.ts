@@ -8,7 +8,7 @@
  */
 
 import { Card, Suit } from '../../models/card';
-import { PlayerPosition, CLOCKWISE_PLAYER_ORDER } from '../../models/player';
+import { PlayerPosition, PlayerType, CLOCKWISE_PLAYER_ORDER } from '../../models/player';
 import {
   GameMode,
   GameState,
@@ -141,11 +141,22 @@ export class CallBreakRulesEngine implements IRulesEngine {
     const deck = cardEngine.createDeck();
     const shuffledDeck = cardEngine.shuffle(deck, seed);
 
-    // Solo Offline mode (human vs bots): 10%-12% weighted deal boost for South
-    // Online Multiplayer mode or seeded test runs: strictly unweighted uniform random Fisher-Yates deal
+    // Solo Human Deal Assist:
+    // Exactly 1 Human + 3 Bots -> use dealWeighted() targeting that Human's actual PlayerPosition.
+    // 2+ Humans, 0 Humans, or seeded test runs -> strictly unweighted uniform random Fisher-Yates deal.
+    const humanPositions = CLOCKWISE_PLAYER_ORDER.filter(
+      (pos) => state.players[pos]?.type === PlayerType.HUMAN
+    );
+
     let dealtHands: Readonly<Record<PlayerPosition, readonly Card[]>>;
-    if (state.mode === GameMode.OFFLINE_BOTS && seed === undefined && typeof cardEngine.dealWeighted === 'function') {
-      dealtHands = cardEngine.dealWeighted(shuffledDeck, PlayerPosition.SOUTH);
+    if (seed === undefined && typeof cardEngine.dealWeighted === 'function') {
+      if (humanPositions.length === 1) {
+        dealtHands = cardEngine.dealWeighted(shuffledDeck, humanPositions[0]);
+      } else if (state.mode === GameMode.OFFLINE_BOTS) {
+        dealtHands = cardEngine.dealWeighted(shuffledDeck, PlayerPosition.SOUTH);
+      } else {
+        dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+      }
     } else {
       dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
     }
@@ -504,11 +515,22 @@ export class CallBreakRulesEngine implements IRulesEngine {
     const deck = cardEngine.createDeck();
     const shuffledDeck = cardEngine.shuffle(deck, seed);
 
-    // Solo Offline mode (human vs bots): 10%-12% weighted deal boost for South
-    // Online Multiplayer mode or seeded test runs: strictly unweighted uniform random Fisher-Yates deal
+    // Solo Human Deal Assist:
+    // Exactly 1 Human + 3 Bots -> use dealWeighted() targeting that Human's actual PlayerPosition.
+    // 2+ Humans, 0 Humans, or seeded test runs -> strictly unweighted uniform random Fisher-Yates deal.
+    const humanPositions = CLOCKWISE_PLAYER_ORDER.filter(
+      (pos) => state.players[pos]?.type === PlayerType.HUMAN
+    );
+
     let dealtHands: Readonly<Record<PlayerPosition, readonly Card[]>>;
-    if (state.mode === GameMode.OFFLINE_BOTS && seed === undefined && typeof cardEngine.dealWeighted === 'function') {
-      dealtHands = cardEngine.dealWeighted(shuffledDeck, PlayerPosition.SOUTH);
+    if (seed === undefined && typeof cardEngine.dealWeighted === 'function') {
+      if (humanPositions.length === 1) {
+        dealtHands = cardEngine.dealWeighted(shuffledDeck, humanPositions[0]);
+      } else if (state.mode === GameMode.OFFLINE_BOTS) {
+        dealtHands = cardEngine.dealWeighted(shuffledDeck, PlayerPosition.SOUTH);
+      } else {
+        dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
+      }
     } else {
       dealtHands = cardEngine.deal(shuffledDeck, CLOCKWISE_PLAYER_ORDER);
     }

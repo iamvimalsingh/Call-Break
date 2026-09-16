@@ -28,11 +28,11 @@ import { GameStateStore } from '../../src/core/state/gameStore';
 import { LocalGameController } from '../../src/core/controller/LocalGameController';
 import { createInitialGameState } from '../../src/core/state/initialState';
 
-// Standard active turn timers: 45s main action time + 15s extra time (60s total).
-// The host receives an additional 20s extra time allowance (80s total).
+// Standard active turn timers: 20s main action time + 10s extra time (30s total).
+// The host receives an additional 20s extra time allowance (50s total).
 // The 45-second timer is strictly reserved for the disconnect/reconnect window in RoomManager.
-export const MAIN_TURN_SECONDS = 45;
-export const EXTRA_TURN_SECONDS = 15;
+export const MAIN_TURN_SECONDS = 20;
+export const EXTRA_TURN_SECONDS = 10;
 export const HOST_EXTRA_TURN_SECONDS = 20;
 
 const POSITIONS: readonly PlayerPosition[] = [
@@ -174,7 +174,7 @@ export class AuthoritativeGameController {
   }
 
   /**
-   * Returns extra turn duration: 15s for normal players, 35s (15s + 20s) for the human host.
+   * Returns extra turn duration: 10s for normal players, 30s (10s + 20s) for the human host.
    */
   public getExtraTurnSeconds(position: PlayerPosition): number {
     return this.isHostPosition(position)
@@ -387,9 +387,9 @@ export class AuthoritativeGameController {
 
   /**
    * Starts or restarts the turn timer for the given active human player:
-   * Main time: 45s
-   * Extra time: 15s (Non-host) or 35s (Host, which is 15s + 20s)
-   * Total allowance: 60s (Non-host) or 80s (Host)
+   * Main time: 20s
+   * Extra time: 10s (Non-host) or 30s (Host, which is 10s + 20s)
+   * Total allowance: 30s (Non-host) or 50s (Host)
    */
   private startTurnTimer(position: PlayerPosition): void {
     this.clearTurnTimer();
@@ -406,8 +406,8 @@ export class AuthoritativeGameController {
         if (this.remainingSeconds > 0) {
           this.broadcastTimerTick(position, this.remainingSeconds, MAIN_TURN_SECONDS, false);
         } else {
-          // 45s main time expired -> activate Extra Time
-          // (15s for non-host human, 35s for host human)
+          // 20s main time expired -> activate Extra Time
+          // (10s for non-host human, 30s for host human)
           this.isExtraTime = true;
           const extraSeconds = this.getExtraTurnSeconds(position);
           this.remainingSeconds = extraSeconds;
@@ -423,7 +423,7 @@ export class AuthoritativeGameController {
         if (this.remainingSeconds > 0) {
           this.broadcastTimerTick(position, this.remainingSeconds, extraSeconds, true);
         } else {
-          // Extra time expired (Total 60s for non-host, 80s for host) -> Auto-timeout move
+          // Extra time expired (Total 30s for non-host, 50s for host) -> Auto-timeout move
           this.clearTurnTimer();
           this.handleTurnTimeout(position);
         }
@@ -446,7 +446,7 @@ export class AuthoritativeGameController {
   }
 
   /**
-   * Executes authoritative auto-timeout action when 45s + 15s (60s total) expires:
+   * Executes authoritative auto-timeout action when total allowance (30s non-host, 50s host) expires:
    * 1. Converts the seat's controller state to isBot: true (PlayerType.BOT) keeping cards, bid, and tricks intact.
    * 2. Requests an optimal legal move from the strong bot strategy (with lowest legal card as emergency fallback).
    * 3. Plays that move immediately without stalling.

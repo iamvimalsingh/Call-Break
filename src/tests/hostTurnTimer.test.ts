@@ -1,10 +1,10 @@
 /**
  * Host Extra Time and Turn Timer Tests
  * Verifies:
- * A. Non-host Human = 60 seconds (45s main + 15s extra)
- * B. Host Human = 80 seconds (45s main + 35s extra)
- * C. Host transfer gives 80 seconds to new host
- * D. Previous host returns to normal 60 seconds
+ * A. Non-host Human = 30 seconds (20s main + 10s extra)
+ * B. Host Human = 50 seconds (20s main + 30s extra)
+ * C. Host transfer gives 50 seconds to new host
+ * D. Previous host returns to normal 30 seconds
  * E. Bot never gets Host allowance
  * F. Reconnect does not duplicate timers
  * G. Existing timeout/auto-bot behavior remains intact
@@ -25,12 +25,12 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
   const harness = new TestHarness();
   const category = 'Host Turn Timer & Allowances';
 
-  harness.register(category, 'A. Non-host human turn timer allowance equals exactly 60 seconds (45s main + 15s extra)', () => {
-    if (MAIN_TURN_SECONDS !== 45) {
-      throw new Error(`Expected MAIN_TURN_SECONDS to be 45, got ${MAIN_TURN_SECONDS}`);
+  harness.register(category, 'A. Non-host human turn timer allowance equals exactly 30 seconds (20s main + 10s extra)', () => {
+    if (MAIN_TURN_SECONDS !== 20) {
+      throw new Error(`Expected MAIN_TURN_SECONDS to be 20, got ${MAIN_TURN_SECONDS}`);
     }
-    if (EXTRA_TURN_SECONDS !== 15) {
-      throw new Error(`Expected EXTRA_TURN_SECONDS to be 15, got ${EXTRA_TURN_SECONDS}`);
+    if (EXTRA_TURN_SECONDS !== 10) {
+      throw new Error(`Expected EXTRA_TURN_SECONDS to be 10, got ${EXTRA_TURN_SECONDS}`);
     }
     if (HOST_EXTRA_TURN_SECONDS !== 20) {
       throw new Error(`Expected HOST_EXTRA_TURN_SECONDS to be 20, got ${HOST_EXTRA_TURN_SECONDS}`);
@@ -48,12 +48,12 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
     controller.setHostPositionProvider((pos) => pos === PlayerPosition.SOUTH);
 
     const nonHostExtra = controller.getExtraTurnSeconds(PlayerPosition.WEST);
-    if (nonHostExtra !== 15) {
-      throw new Error(`Expected non-host extra seconds to be 15, got ${nonHostExtra}`);
+    if (nonHostExtra !== 10) {
+      throw new Error(`Expected non-host extra seconds to be 10, got ${nonHostExtra}`);
     }
     const nonHostTotal = MAIN_TURN_SECONDS + nonHostExtra;
-    if (nonHostTotal !== 60) {
-      throw new Error(`Expected non-host total allowance to be 60s, got ${nonHostTotal}`);
+    if (nonHostTotal !== 30) {
+      throw new Error(`Expected non-host total allowance to be 30s, got ${nonHostTotal}`);
     }
     if (controller.isHostPosition(PlayerPosition.WEST)) {
       throw new Error('West should not be identified as host');
@@ -61,7 +61,7 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
     controller.destroy();
   });
 
-  harness.register(category, 'B. Host human turn timer allowance equals exactly 80 seconds (45s main + 35s extra)', () => {
+  harness.register(category, 'B. Host human turn timer allowance equals exactly 50 seconds (20s main + 30s extra)', () => {
     const controller = new AuthoritativeGameController();
     controller.initializeMatch({
       [PlayerPosition.SOUTH]: { id: 'p1_host', name: 'Host Player', isBot: false, position: PlayerPosition.SOUTH },
@@ -77,17 +77,17 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
     }
 
     const hostExtra = controller.getExtraTurnSeconds(PlayerPosition.SOUTH);
-    if (hostExtra !== 35) {
-      throw new Error(`Expected host extra seconds to be 35 (15 + 20), got ${hostExtra}`);
+    if (hostExtra !== 30) {
+      throw new Error(`Expected host extra seconds to be 30 (10 + 20), got ${hostExtra}`);
     }
     const hostTotal = MAIN_TURN_SECONDS + hostExtra;
-    if (hostTotal !== 80) {
-      throw new Error(`Expected host total allowance to be 80s, got ${hostTotal}`);
+    if (hostTotal !== 50) {
+      throw new Error(`Expected host total allowance to be 50s, got ${hostTotal}`);
     }
     controller.destroy();
   });
 
-  harness.register(category, 'C. Host transfer dynamically gives 80 seconds to new host', () => {
+  harness.register(category, 'C. Host transfer dynamically gives 50 seconds to new host', () => {
     const controller = new AuthoritativeGameController();
     controller.initializeMatch({
       [PlayerPosition.SOUTH]: { id: 'p1_host', name: 'Original Host', isBot: false, position: PlayerPosition.SOUTH },
@@ -111,17 +111,17 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
       throw new Error('West should now be identified as host');
     }
     const newHostExtra = controller.getExtraTurnSeconds(PlayerPosition.WEST);
-    if (newHostExtra !== 35) {
-      throw new Error(`New host should have 35s extra time, got ${newHostExtra}`);
+    if (newHostExtra !== 30) {
+      throw new Error(`New host should have 30s extra time, got ${newHostExtra}`);
     }
     const newHostTotal = MAIN_TURN_SECONDS + newHostExtra;
-    if (newHostTotal !== 80) {
-      throw new Error(`New host should have 80s total allowance, got ${newHostTotal}`);
+    if (newHostTotal !== 50) {
+      throw new Error(`New host should have 50s total allowance, got ${newHostTotal}`);
     }
     controller.destroy();
   });
 
-  harness.register(category, 'D. Previous host returns to normal 60 seconds immediately upon transfer', () => {
+  harness.register(category, 'D. Previous host returns to normal 30 seconds immediately upon transfer', () => {
     const controller = new AuthoritativeGameController();
     controller.initializeMatch({
       [PlayerPosition.SOUTH]: { id: 'p1_host', name: 'Original Host', isBot: false, position: PlayerPosition.SOUTH },
@@ -140,12 +140,12 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
       throw new Error('Former host SOUTH should no longer be identified as host');
     }
     const formerHostExtra = controller.getExtraTurnSeconds(PlayerPosition.SOUTH);
-    if (formerHostExtra !== 15) {
-      throw new Error(`Former host should have reverted to 15s extra time, got ${formerHostExtra}`);
+    if (formerHostExtra !== 10) {
+      throw new Error(`Former host should have reverted to 10s extra time, got ${formerHostExtra}`);
     }
     const formerHostTotal = MAIN_TURN_SECONDS + formerHostExtra;
-    if (formerHostTotal !== 60) {
-      throw new Error(`Former host should have reverted to 60s total allowance, got ${formerHostTotal}`);
+    if (formerHostTotal !== 30) {
+      throw new Error(`Former host should have reverted to 30s total allowance, got ${formerHostTotal}`);
     }
     controller.destroy();
   });
@@ -167,8 +167,8 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
       throw new Error('Bot seat must NEVER be identified as a host position');
     }
     const botExtra = controller.getExtraTurnSeconds(PlayerPosition.SOUTH);
-    if (botExtra !== 15) {
-      throw new Error(`Bot must receive standard 15s, got ${botExtra}`);
+    if (botExtra !== 10) {
+      throw new Error(`Bot must receive standard 10s, got ${botExtra}`);
     }
     controller.destroy();
   });
@@ -203,12 +203,12 @@ export function buildHostTurnTimerTestSuite(): TestHarness {
       throw new Error('Seat takeover failed');
     }
 
-    // P2 is human non-host: allowance must be 60s
+    // P2 is human non-host: allowance must be 30s
     if (controller.isHostPosition(PlayerPosition.WEST)) {
       throw new Error('Incoming human at WEST must not be host');
     }
-    if (controller.getExtraTurnSeconds(PlayerPosition.WEST) !== 15) {
-      throw new Error('Incoming human should have 15s extra time');
+    if (controller.getExtraTurnSeconds(PlayerPosition.WEST) !== 10) {
+      throw new Error('Incoming human should have 10s extra time');
     }
 
     controller.destroy();
