@@ -204,7 +204,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
 
         {/* In-Game Table Live Status (Multiplayer) */}
         {isMultiplayer && (
-          <div className="flex items-center shrink-0">
+          <div className="hidden md:flex items-center shrink-0">
             {connectionState === 'OPEN' ? (
               <div
                 id="badge-table-online"
@@ -352,7 +352,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
             type="button"
             id="btn-table-invite-whatsapp"
             onClick={handleShareRoom}
-            className="px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] xs:text-[11px] sm:text-xs rounded-lg sm:rounded-xl bg-[#25D366] hover:bg-[#20bd5a] active:bg-[#1da850] text-stone-950 font-black flex items-center gap-1 sm:gap-1.5 shadow-md shadow-[#25D366]/25 transition-all cursor-pointer select-none shrink-0"
+            className="hidden md:flex px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] xs:text-[11px] sm:text-xs rounded-lg sm:rounded-xl bg-[#25D366] hover:bg-[#20bd5a] active:bg-[#1da850] text-stone-950 font-black items-center gap-1 sm:gap-1.5 shadow-md shadow-[#25D366]/25 transition-all cursor-pointer select-none shrink-0"
             title={`Invite friends to this table via WhatsApp (Code: ${roomCode})`}
           >
             <Share2 className="w-3.5 h-3.5 text-stone-950 shrink-0" />

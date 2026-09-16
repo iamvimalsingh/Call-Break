@@ -10,7 +10,7 @@
  * - Leave Game (with exit guard)
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Play,
@@ -39,6 +39,7 @@ import { transitions } from '../../core/animation/animationConfig';
 import { GameState } from '../../models/gameState';
 import { PlayerPosition, POSITION_ORDER } from '../../models/player';
 import { SUIT_CONFIG } from '../../models/card';
+import { ConnectionState } from '../../models/multiplayer';
 import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
 
 export interface TableMenuModalProps {
@@ -75,6 +76,16 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
   const [editingSeat, setEditingSeat] = useState<PlayerPosition | null>(null);
   const [editingName, setEditingName] = useState<string>('');
   const [swapSourceSeat, setSwapSourceSeat] = useState<PlayerPosition | null>(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(() =>
+    sharedMultiplayerClient.getConnectionState()
+  );
+
+  useEffect(() => {
+    const unsubConn = sharedMultiplayerClient.onConnectionState((conn) => {
+      setConnectionState(conn);
+    });
+    return unsubConn;
+  }, []);
 
   // Haptic feedback state
   const [hapticsEnabled, setHapticsEnabled] = useState<boolean>(() => {
@@ -173,31 +184,56 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
             </button>
           </div>
 
-          {/* Multiplayer Room Badge & Invite (if room code exists) */}
+          {/* Multiplayer Room Badge, Connection Status & Invite (if room code exists) */}
           {roomCode && (
-            <div className="mb-3 p-3 rounded-2xl bg-stone-950/80 border border-amber-900/50 flex items-center justify-between shadow-inner">
-              <div className="text-left">
-                <span className="text-[10px] uppercase font-mono tracking-wider text-amber-400 font-bold block">
-                  Room Code
-                </span>
-                <span className="font-mono text-base font-black text-amber-300 tracking-wider">
-                  {roomCode}
-                </span>
+            <div className="mb-3 p-3 rounded-2xl bg-stone-950/90 border border-stone-800 flex items-center justify-between shadow-inner">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                    connectionState === 'OPEN' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500 animate-ping'
+                  }`}
+                  title={connectionState === 'OPEN' ? 'Connected (WebSocket OPEN)' : `Connection state: ${connectionState}`}
+                />
+                <div className="text-left">
+                  <span className="text-[10px] uppercase font-mono tracking-wider text-stone-400 font-bold block">
+                    Room ID: <span className="text-amber-300 font-black">{roomCode}</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-stone-400">
+                    {connectionState === 'OPEN' ? 'Online (Connected)' : 'Reconnecting...'}
+                  </span>
+                </div>
               </div>
-              {onShareRoom && (
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  id="btn-table-menu-share"
                   onClick={() => {
                     soundManager.play('click');
-                    onShareRoom();
+                    const currentUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://callbreak.app';
+                    const joinLink = `${currentUrl}?room=${roomCode}`;
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(joinLink).catch(() => {});
+                    }
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-stone-950 font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-[#25D366]/20 cursor-pointer transition-all"
+                  className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  title="Copy Room Link"
                 >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>Invite</span>
+                  Copy
                 </button>
-              )}
+                {onShareRoom && (
+                  <button
+                    type="button"
+                    id="btn-table-menu-share"
+                    onClick={() => {
+                      soundManager.play('click');
+                      onShareRoom();
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-stone-950 font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-[#25D366]/20 cursor-pointer transition-all"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
