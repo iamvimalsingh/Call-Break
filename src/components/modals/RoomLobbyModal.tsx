@@ -239,16 +239,6 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     };
   }, [isOpen, activeTab]);
 
-  // Handle Tab Switch & Host Room Creation
-  useEffect(() => {
-    if (!isOpen) return;
-
-    if (activeTab === 'create' && !hasJoinedRoom && connectionState === 'OPEN') {
-      const effectiveHost = playerName.trim() || 'Host (Player 1)';
-      sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
-    }
-  }, [isOpen, activeTab, roomCode, hasJoinedRoom, connectionState]);
-
   // Sync initial props
   useEffect(() => {
     if (initialTab) {
@@ -274,12 +264,6 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     setJoinError(null);
     sharedMultiplayerClient
       .connect()
-      .then(() => {
-        if (activeTab === 'create') {
-          const effectiveHost = playerName.trim() || 'Host (Player 1)';
-          sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
-        }
-      })
       .catch((err) => {
         console.error('Retry connection error:', err);
       });
@@ -315,6 +299,11 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   };
 
   const handleApplyCustomRoomCode = (customCode?: string) => {
+    if (connectionState !== 'OPEN') {
+      setJoinError('Cannot create table: Server connection is offline or reconnecting.');
+      soundManager.play('warning');
+      return;
+    }
     const raw = customCode !== undefined ? customCode : roomCode;
     const clean = raw.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (!clean || clean.length < 3) {
@@ -334,8 +323,6 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     setRoomCode(newCode);
     setJoinError(null);
     soundManager.play('deal');
-    const effectiveHost = playerName.trim() || 'Host (Player 1)';
-    sharedMultiplayerClient.createRoom(effectiveHost, newCode);
   };
 
   const handleJoinSubmit = (e: React.FormEvent) => {
@@ -594,10 +581,6 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     onChange={(e) => {
                       const val = e.target.value;
                       handlePlayerNameChange(val);
-                      if (activeTab === 'create' && !hasJoinedRoom) {
-                        const effectiveHost = val.trim() || 'Host (Player 1)';
-                        sharedMultiplayerClient.createRoom(effectiveHost, roomCode);
-                      }
                     }}
                     placeholder="e.g. Rahul (defaults to Host)"
                     maxLength={18}
@@ -606,108 +589,130 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 </div>
               )}
 
-              {/* Room Code Card & Preferred/Custom Room ID Input */}
-              <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-900/60 flex flex-col items-center text-center shadow-inner relative space-y-3">
-                <div className="w-full flex items-center justify-between px-1">
-                  <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold">
-                    Room ID / Code
-                  </span>
-                  <span className="text-[10px] text-stone-400">
-                    {hasJoinedRoom ? 'Active Table' : 'Custom or Random'}
-                  </span>
-                </div>
+              {/* Room Code Card & Controls */}
+              {!hasJoinedRoom ? (
+                /* STATE 1: NEW TABLE DRAFT */
+                <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-900/60 flex flex-col items-center text-center shadow-inner relative space-y-3">
+                  <div className="w-full flex items-center justify-between px-1">
+                    <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold">
+                      Room ID / Code
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-stone-800 text-stone-400 font-medium">
+                      New Table Draft
+                    </span>
+                  </div>
 
-                <div className="w-full flex items-center gap-2">
-                  <input
-                    type="text"
-                    id="input-create-room-code"
-                    value={roomCode}
-                    readOnly={hasJoinedRoom}
-                    onChange={(e) => {
-                      if (hasJoinedRoom) return;
-                      const clean = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-                      setRoomCode(clean);
-                      setJoinError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (hasJoinedRoom) return;
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleApplyCustomRoomCode();
-                      }
-                    }}
-                    placeholder="e.g. VIP888"
-                    maxLength={10}
-                    className="flex-1 px-3 py-2 rounded-xl bg-stone-900 border border-amber-700/60 text-amber-300 font-mono text-2xl sm:text-3xl font-black tracking-widest text-center focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 uppercase placeholder:text-stone-600"
-                  />
-                  {!hasJoinedRoom && (
+                  <div className="w-full space-y-2.5">
+                    <input
+                      type="text"
+                      id="input-create-room-code"
+                      value={roomCode}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                        setRoomCode(clean);
+                        setJoinError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyCustomRoomCode();
+                        }
+                      }}
+                      placeholder="e.g. VIP888"
+                      maxLength={10}
+                      className="w-full px-3 py-2.5 rounded-xl bg-stone-900 border border-amber-700/60 text-amber-300 font-mono text-2xl sm:text-3xl font-black tracking-widest text-center focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 uppercase placeholder:text-stone-600"
+                    />
+
+                    {/* Full-width Set Room ID Button below input for mobile ergonomic reliability */}
                     <button
                       type="button"
                       id="btn-apply-custom-room-code"
                       onClick={() => handleApplyCustomRoomCode()}
-                      className="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold shrink-0 cursor-pointer transition-colors shadow-sm"
-                      title="Apply Room ID"
+                      className="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-stone-950 text-xs sm:text-sm font-black flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-md shadow-amber-950/40"
+                      title="Set Room ID & Create Table"
                     >
-                      Set ID
+                      <PlusCircle className="w-4 h-4 text-stone-950 shrink-0" />
+                      <span>Set Room ID</span>
                     </button>
+
+                    {/* Secondary Generator */}
+                    <div className="flex justify-center pt-0.5">
+                      <button
+                        type="button"
+                        id="btn-regenerate-room-code"
+                        onClick={handleRegenerateCode}
+                        className="px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-400 hover:text-stone-200 border border-stone-800 text-xs font-mono cursor-pointer transition-colors flex items-center gap-1.5"
+                        title="Generate a random candidate ID"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-stone-400" />
+                        <span>Generate Random ID</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {joinError && activeTab === 'create' && (
+                    <div
+                      id="create-room-error"
+                      className="w-full p-2.5 rounded-xl bg-rose-950/80 border border-rose-700/80 text-rose-300 text-xs font-semibold flex items-center justify-center gap-2 text-center"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      <span>{joinError}</span>
+                    </div>
                   )}
                 </div>
+              ) : (
+                /* STATE 2: ACTIVE WAITING ROOM (IMMUTABLE ID, SHARE/COPY ACTIVE) */
+                <>
+                  <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-900/60 flex flex-col items-center text-center shadow-inner relative space-y-3">
+                    <div className="w-full flex items-center justify-between px-1">
+                      <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold">
+                        Room ID / Code
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-950 border border-emerald-800/80 text-emerald-400 font-bold">
+                        Active Table
+                      </span>
+                    </div>
 
-                {joinError && activeTab === 'create' && (
-                  <div
-                    id="create-room-error"
-                    className="w-full p-2.5 rounded-xl bg-rose-950/80 border border-rose-700/80 text-rose-300 text-xs font-semibold flex items-center justify-center gap-2 text-center"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
-                    <span>{joinError}</span>
+                    <div className="w-full py-2.5 px-4 rounded-xl bg-stone-900/90 border border-amber-500/40 text-amber-300 font-mono text-2xl sm:text-3xl font-black tracking-widest text-center select-all">
+                      {roomCode}
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-1">
+                      <button
+                        type="button"
+                        id="btn-copy-room-code"
+                        onClick={handleCopyCode}
+                        className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors"
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span className="text-emerald-400 font-bold">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Copy Code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                <div className="flex items-center gap-2 mt-1">
-                  <button
-                    type="button"
-                    id="btn-copy-room-code"
-                    onClick={handleCopyCode}
-                    className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors"
+                  {/* WhatsApp Share Button - Only visible in Active Waiting Room */}
+                  <a
+                    id="btn-share-whatsapp"
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => soundManager.play('click')}
+                    className="w-full py-3 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20bd5a] text-stone-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20 transition-all cursor-pointer"
                   >
-                    {copied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400 font-bold">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Copy Code</span>
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    id="btn-regenerate-room-code"
-                    onClick={handleRegenerateCode}
-                    className="px-2.5 py-1.5 rounded-xl bg-stone-900/80 hover:bg-stone-800 text-stone-400 hover:text-stone-200 border border-stone-800 text-xs font-mono cursor-pointer transition-colors flex items-center gap-1"
-                    title="Generate another code"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    <span>Random ID</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* WhatsApp Share Button */}
-              <a
-                id="btn-share-whatsapp"
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => soundManager.play('click')}
-                className="w-full py-3 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20bd5a] text-stone-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20 transition-all cursor-pointer"
-              >
-                <Share2 className="w-4 h-4 text-stone-950" />
-                <span>Invite Friends via WhatsApp</span>
-              </a>
+                    <Share2 className="w-4 h-4 text-stone-950" />
+                    <span>Invite Friends via WhatsApp</span>
+                  </a>
+                </>
+              )}
 
               {/* Table Seats Preview */}
               <div className="p-3.5 rounded-2xl bg-stone-950/60 border border-stone-800/80 space-y-2">
@@ -1070,27 +1075,29 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 )}
               </div>
 
-              {/* Action Button: Start for Host or Waiting banner for Joined Guest */}
-              {isHost ? (
-                <button
-                  type="button"
-                  id="btn-start-created-table"
-                  onClick={handleStartCreatedRoom}
-                  disabled={connectionState !== 'OPEN'}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Play className="w-4 h-4 fill-current text-white" />
-                  <span>▶ Start Game (Fill with Bots)</span>
-                </button>
-              ) : (
-                <div
-                  id="banner-guest-waiting"
-                  className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center gap-2 text-stone-300 text-xs font-semibold"
-                >
-                  <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-                  <span>Waiting for host to start the game</span>
-                </div>
-              )}
+              {/* Action Button: Start for Host or Waiting banner for Joined Guest (only after room creation) */}
+              {hasJoinedRoom ? (
+                isHost ? (
+                  <button
+                    type="button"
+                    id="btn-start-created-table"
+                    onClick={handleStartCreatedRoom}
+                    disabled={connectionState !== 'OPEN'}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 active:from-emerald-700 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Play className="w-4 h-4 fill-current text-white" />
+                    <span>▶ Start Game (Fill with Bots)</span>
+                  </button>
+                ) : (
+                  <div
+                    id="banner-guest-waiting"
+                    className="p-3.5 rounded-xl bg-stone-900 border border-stone-800 flex items-center justify-center gap-2 text-stone-300 text-xs font-semibold"
+                  >
+                    <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                    <span>Waiting for host to start the game</span>
+                  </div>
+                )
+              ) : null}
             </div>
           )}
 

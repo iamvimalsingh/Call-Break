@@ -27,6 +27,7 @@ import { buildHostLifecycleTestSuite } from './hostLifecycle.test';
 import { buildWaitingTableVsActiveMatchTestSuite } from './waitingTableVsActiveMatch.test';
 import { buildActiveTableDiscoveryTestSuite } from './activeTableDiscovery.test';
 import { buildJoinerWaitingRoomFlowTestSuite } from './joinerWaitingRoomFlow.test';
+import { buildNewTableDraftVsCreationTestSuite } from './newTableDraftVsCreation.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -53,6 +54,7 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildWaitingTableVsActiveMatchTestSuite());
   composite.include(buildActiveTableDiscoveryTestSuite());
   composite.include(buildJoinerWaitingRoomFlowTestSuite());
+  composite.include(buildNewTableDraftVsCreationTestSuite());
   return composite;
 }
 
