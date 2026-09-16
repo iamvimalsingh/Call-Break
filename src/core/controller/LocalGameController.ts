@@ -351,6 +351,15 @@ export class LocalGameController implements IGameController {
               console.error('Error in rebid listener:', err);
             }
           }
+
+          // Restart turn progression / bot step after re-deal
+          if (this.rulesEngine) {
+            const expected = this.rulesEngine.getExpectedBiddingPlayer(redealtState);
+            if (expected && this.isBotPlayer(expected)) {
+              this.stepBotTurn();
+            }
+          }
+
           return true;
         }
       }

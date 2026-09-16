@@ -785,7 +785,7 @@ export function buildRulesEngineTestSuite(): TestHarness {
     const stateAfterRebid = store.getState();
     assert.equal(stateAfterRebid.status, GameStatus.BIDDING, 'State must remain in BIDDING phase');
     assert.equal(stateAfterRebid.players[PlayerPosition.SOUTH].currentBid, null, 'SOUTH bid reset to null');
-    assert.equal(stateAfterRebid.players[PlayerPosition.WEST].currentBid, null, 'WEST bid reset to null');
+    assert.equal(typeof stateAfterRebid.players[PlayerPosition.WEST].currentBid, 'number', 'WEST (bot) automatically re-bids after re-deal');
     assert.equal(stateAfterRebid.players[PlayerPosition.SOUTH].hand.length, 13, 'Hand re-dealt with 13 cards');
   });
 
