@@ -362,12 +362,12 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
 
                         <div className="min-w-0 flex-1">
                           {isEditing ? (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
                               <input
                                 type="text"
                                 value={editingName}
                                 onChange={(e) => setEditingName(e.target.value)}
-                                className="px-2 py-0.5 rounded bg-stone-800 border border-stone-600 text-white text-xs w-28 focus:outline-hidden focus:border-emerald-500"
+                                className="flex-1 min-w-0 px-2 py-0.5 rounded bg-stone-800 border border-stone-600 text-white text-xs sm:w-28 focus:outline-hidden focus:border-emerald-500"
                                 autoFocus
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') handleSaveRename(pos);
@@ -377,7 +377,8 @@ export const TableMenuModal: React.FC<TableMenuModalProps> = ({
                               <button
                                 type="button"
                                 onClick={() => handleSaveRename(pos)}
-                                className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500"
+                                className="shrink-0 p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer flex items-center justify-center min-w-[24px] min-h-[24px]"
+                                title="Save name"
                               >
                                 <Check className="w-3 h-3" />
                               </button>

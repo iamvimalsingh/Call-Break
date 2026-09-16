@@ -45,9 +45,36 @@ export type JoinRequestListener = (payload: JoinRequestPayload) => void;
 export type JoinRequestStatusListener = (payload: JoinRequestStatusPayload) => void;
 
 const PLAYER_ID_STORAGE_KEY = 'cb_player_id';
+const PLAYER_NAME_STORAGE_KEY = 'cb_player_name';
 const ACTIVE_TABLE_STORAGE_KEY = 'cb_active_table_id';
 const CONFIRMED_SEAT_STORAGE_KEY = 'cb_confirmed_seat';
 const PREFERRED_ROOM_STORAGE_KEY = 'cb_preferred_room_id';
+
+/**
+ * Returns the player name persisted in localStorage, if any.
+ */
+export function getStoredPlayerName(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
+      return val && val.trim().length > 0 ? val.trim() : null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Persists the player name in localStorage.
+ */
+export function setStoredPlayerName(name: string | null): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (name && name.trim().length > 0) {
+        localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name.trim());
+      }
+    }
+  } catch {}
+}
 
 /**
  * Returns the preferred room ID persisted in localStorage, if any.
@@ -410,13 +437,14 @@ export class MultiplayerClient {
           // Automatically resume active table session if persisted on browser reload
           const activeTable = getActiveTableId();
           if (activeTable) {
+            const storedName = getStoredPlayerName() || 'Player';
             console.log(`[WebSocket] Attempting to auto-resume active table session: ${activeTable}`);
             this.send({
               type: 'JOIN_ROOM',
               payload: {
                 roomCode: activeTable,
                 playerId: this.playerId,
-                playerName: 'Player',
+                playerName: storedName,
               },
             });
           }
@@ -622,7 +650,16 @@ export class MultiplayerClient {
   }
 
   // Room Actions
-  public createRoom(playerName: string = 'Host', roomCode?: string, totalRounds: number = 5): boolean {
+  public createRoom(playerName: string, roomCode?: string, totalRounds: number = 5): boolean {
+    const trimmedName = (playerName || '').trim();
+    if (!trimmedName) {
+      this.errorListeners.forEach((fn) => {
+        try {
+          fn({ message: 'Please enter your name.', code: 'INVALID_NAME' });
+        } catch {}
+      });
+      return false;
+    }
     if (this.getConnectionState() !== 'OPEN') {
       console.warn('[MultiplayerClient] Cannot create table: WebSocket connection is not OPEN.');
       this.errorListeners.forEach((fn) => {
@@ -634,12 +671,21 @@ export class MultiplayerClient {
     }
     this.send({
       type: 'CREATE_ROOM',
-      payload: { playerName, roomCode, totalRounds, playerId: this.playerId },
+      payload: { playerName: trimmedName, roomCode, totalRounds, playerId: this.playerId },
     });
     return true;
   }
 
-  public joinRoom(roomCode: string, playerName: string = 'Guest'): boolean {
+  public joinRoom(roomCode: string, playerName: string): boolean {
+    const trimmedName = (playerName || '').trim();
+    if (!trimmedName) {
+      this.errorListeners.forEach((fn) => {
+        try {
+          fn({ message: 'Please enter your name.', code: 'INVALID_NAME' });
+        } catch {}
+      });
+      return false;
+    }
     if (this.getConnectionState() !== 'OPEN') {
       console.warn('[MultiplayerClient] Cannot join table: WebSocket connection is not OPEN.');
       this.errorListeners.forEach((fn) => {
@@ -651,7 +697,7 @@ export class MultiplayerClient {
     }
     this.send({
       type: 'JOIN_ROOM',
-      payload: { roomCode, playerName, playerId: this.playerId },
+      payload: { roomCode, playerName: trimmedName, playerId: this.playerId },
     });
     return true;
   }

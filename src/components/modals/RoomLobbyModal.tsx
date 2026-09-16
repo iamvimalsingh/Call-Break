@@ -87,7 +87,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [pendingApprovalMsg, setPendingApprovalMsg] = useState<string | null>(null);
-  const [showActiveTables, setShowActiveTables] = useState(false);
+  const [showActiveTables, setShowActiveTables] = useState(true);
   const [activeTables, setActiveTables] = useState<ActiveTableSummary[]>([]);
   const [isLoadingActiveTables, setIsLoadingActiveTables] = useState(false);
   const [roomState, setRoomState] = useState<RoomState | null>(() =>
@@ -143,6 +143,11 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       return;
     }
 
+    if (showActiveTables) {
+      setIsLoadingActiveTables(true);
+      sharedMultiplayerClient.requestActiveRooms();
+    }
+
     const currentRoom = sharedMultiplayerClient.getRoomState();
     if (currentRoom && currentRoom.roomCode) {
       setRoomState(currentRoom);
@@ -162,6 +167,10 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       setConnectionError(err);
       if (state === 'OPEN') {
         setJoinError(null);
+        if (showActiveTables) {
+          setIsLoadingActiveTables(true);
+          sharedMultiplayerClient.requestActiveRooms();
+        }
       }
     });
 
@@ -198,7 +207,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
         err.message?.toLowerCase().includes('not found') ||
         err.message?.toLowerCase().includes('no active table')
       ) {
-        msg = 'Table not found. Please check the 6-digit code.';
+        msg = 'Table not found. Please check the Room ID.';
       } else if (err.code === 'ROOM_ALREADY_EXISTS') {
         msg = err.message || 'Room ID already active. Please choose another Room ID.';
       }
@@ -256,7 +265,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
   const currentUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://callbreak.app';
   const joinLink = `${currentUrl}?room=${roomCode}`;
-  const inviteMessage = `Let's play Call Break together! Tap the link to join my table: ${joinLink} (Room Code: ${roomCode})`;
+  const inviteMessage = `Let's play Call Break together! Tap the link to join my table: ${joinLink} (Room ID: ${roomCode})`;
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(inviteMessage)}`;
 
   const handleRetryConnection = () => {
@@ -288,7 +297,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
         const text = await navigator.clipboard.readText();
         const clean = text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         if (clean) {
-          setJoinInputCode(clean.slice(0, 8));
+          setJoinInputCode(clean.slice(0, 10));
           setJoinError(null);
           soundManager.play('click');
         }
@@ -304,18 +313,25 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       soundManager.play('warning');
       return;
     }
+    const trimmedName = playerName.trim();
+    if (!trimmedName) {
+      setJoinError('Please enter your name.');
+      soundManager.play('warning');
+      return;
+    }
     const raw = customCode !== undefined ? customCode : roomCode;
     const clean = raw.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    if (!clean || clean.length < 3) {
-      setJoinError('Please enter at least 3 alphanumeric characters for the Room ID.');
+    if (clean && (clean.length < 3 || clean.length > 10)) {
+      setJoinError('Room ID must be between 3 and 10 alphanumeric characters.');
       soundManager.play('warning');
       return;
     }
     setJoinError(null);
-    setRoomCode(clean);
+    if (clean) {
+      setRoomCode(clean);
+    }
     soundManager.play('click');
-    const effectiveHost = playerName.trim() || 'Host (Player 1)';
-    sharedMultiplayerClient.createRoom(effectiveHost, clean);
+    sharedMultiplayerClient.createRoom(trimmedName, clean || undefined);
   };
 
   const handleRegenerateCode = () => {
@@ -332,16 +348,22 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       soundManager.play('warning');
       return;
     }
+    const trimmedName = playerName.trim();
+    if (!trimmedName) {
+      setJoinError('Please enter your name.');
+      soundManager.play('warning');
+      return;
+    }
     const clean = joinInputCode.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-    if (clean.length < 4) {
-      setJoinError('Please enter a valid 6-digit room code');
+    if (clean.length < 3 || clean.length > 10) {
+      setJoinError('Please enter a valid Room ID (3-10 characters).');
       soundManager.play('warning');
       return;
     }
     setJoinError(null);
     setIsJoining(true);
     soundManager.play('deal');
-    sharedMultiplayerClient.joinRoom(clean, playerName.trim());
+    sharedMultiplayerClient.joinRoom(clean, trimmedName);
   };
 
   const handleToggleActiveTables = () => {
@@ -363,10 +385,16 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
   const handleSelectActiveTable = (code: string) => {
     soundManager.play('click');
     setJoinInputCode(code);
+    const trimmedName = playerName.trim();
+    if (!trimmedName) {
+      setJoinError('Please enter your name.');
+      soundManager.play('warning');
+      return;
+    }
     setJoinError(null);
     setIsJoining(true);
     soundManager.play('deal');
-    sharedMultiplayerClient.joinRoom(code, playerName.trim());
+    sharedMultiplayerClient.joinRoom(code, trimmedName);
   };
 
   const handleStartCreatedRoom = () => {
@@ -572,7 +600,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
               {!hasJoinedRoom && (
                 <div className="p-3 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-1.5">
                   <label htmlFor="input-host-name" className="block text-xs font-semibold text-stone-300">
-                    Your Name / Nickname <span className="text-stone-500 font-normal">(Optional)</span>:
+                    Your Name / Nickname <span className="text-amber-400 font-semibold">*</span>:
                   </label>
                   <input
                     type="text"
@@ -582,7 +610,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       const val = e.target.value;
                       handlePlayerNameChange(val);
                     }}
-                    placeholder="e.g. Rahul (defaults to Host)"
+                    placeholder="e.g. Rahul, Vimal"
                     maxLength={18}
                     className="w-full px-3.5 py-2 rounded-xl bg-stone-900 border border-stone-700 text-white text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-500"
                   />
@@ -729,13 +757,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     id="lobby-seat-south"
                     className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-700/60 flex items-center justify-between gap-2"
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div className="w-7 h-7 rounded-lg bg-emerald-800 flex items-center justify-center text-amber-300 shrink-0">
                         <Crown className="w-4 h-4" />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         {editingSeat === PlayerPosition.SOUTH ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
                             <input
                               type="text"
                               value={editingName}
@@ -744,12 +772,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                                 if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.SOUTH);
                               }}
                               autoFocus
-                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-emerald-500 text-white text-xs w-24 focus:outline-hidden"
+                              className="flex-1 min-w-0 px-1.5 py-0.5 rounded bg-stone-900 border border-emerald-500 text-white text-xs sm:w-24 focus:outline-hidden"
                             />
                             <button
                               type="button"
                               onClick={() => handleSaveSeatRename(PlayerPosition.SOUTH)}
-                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                              className="shrink-0 p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer flex items-center justify-center min-w-[24px] min-h-[24px]"
+                              title="Save name"
                             >
                               <Check className="w-3 h-3" />
                             </button>
@@ -768,7 +797,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStartSeatRename(PlayerPosition.SOUTH, southPlayer?.name ?? (playerName.trim() || 'Host'))}
-                        className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors"
+                        className="p-1 rounded bg-stone-800/80 hover:bg-stone-700 text-stone-300 hover:text-white cursor-pointer transition-colors shrink-0"
                         title="Rename South"
                       >
                         <Pencil className="w-3 h-3" />
@@ -785,7 +814,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                         : 'bg-stone-900/80 border border-stone-800'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                           westPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
@@ -793,9 +822,9 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       >
                         {westPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         {editingSeat === PlayerPosition.WEST ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
                             <input
                               type="text"
                               value={editingName}
@@ -804,12 +833,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                                 if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.WEST);
                               }}
                               autoFocus
-                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs w-24 focus:outline-hidden"
+                              className="flex-1 min-w-0 px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs sm:w-24 focus:outline-hidden"
                             />
                             <button
                               type="button"
                               onClick={() => handleSaveSeatRename(PlayerPosition.WEST)}
-                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                              className="shrink-0 p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer flex items-center justify-center min-w-[24px] min-h-[24px]"
+                              title="Save name"
                             >
                               <Check className="w-3 h-3" />
                             </button>
@@ -827,7 +857,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       </div>
                     </div>
                     {isHost && editingSeat !== PlayerPosition.WEST && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         {westPlayer && !westPlayer.isBot && westPlayer.id !== roomState?.myClientId && (
                           <button
                             type="button"
@@ -863,7 +893,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                         : 'bg-stone-900/80 border border-stone-800'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                           northPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
@@ -871,9 +901,9 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       >
                         {northPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         {editingSeat === PlayerPosition.NORTH ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
                             <input
                               type="text"
                               value={editingName}
@@ -882,12 +912,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                                 if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.NORTH);
                               }}
                               autoFocus
-                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs w-24 focus:outline-hidden"
+                              className="flex-1 min-w-0 px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs sm:w-24 focus:outline-hidden"
                             />
                             <button
                               type="button"
                               onClick={() => handleSaveSeatRename(PlayerPosition.NORTH)}
-                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                              className="shrink-0 p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer flex items-center justify-center min-w-[24px] min-h-[24px]"
+                              title="Save name"
                             >
                               <Check className="w-3 h-3" />
                             </button>
@@ -905,7 +936,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       </div>
                     </div>
                     {isHost && editingSeat !== PlayerPosition.NORTH && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         {northPlayer && !northPlayer.isBot && northPlayer.id !== roomState?.myClientId && (
                           <button
                             type="button"
@@ -941,7 +972,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                         : 'bg-stone-900/80 border border-stone-800'
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
                           eastPlayer ? 'bg-emerald-800 text-emerald-300' : 'bg-stone-800 text-stone-400'
@@ -949,9 +980,9 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       >
                         {eastPlayer ? <UserCheck className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         {editingSeat === PlayerPosition.EAST ? (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
                             <input
                               type="text"
                               value={editingName}
@@ -960,12 +991,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                                 if (e.key === 'Enter') handleSaveSeatRename(PlayerPosition.EAST);
                               }}
                               autoFocus
-                              className="px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs w-24 focus:outline-hidden"
+                              className="flex-1 min-w-0 px-1.5 py-0.5 rounded bg-stone-900 border border-amber-500 text-white text-xs sm:w-24 focus:outline-hidden"
                             />
                             <button
                               type="button"
                               onClick={() => handleSaveSeatRename(PlayerPosition.EAST)}
-                              className="p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                              className="shrink-0 p-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer flex items-center justify-center min-w-[24px] min-h-[24px]"
+                              title="Save name"
                             >
                               <Check className="w-3 h-3" />
                             </button>
@@ -983,7 +1015,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       </div>
                     </div>
                     {isHost && editingSeat !== PlayerPosition.EAST && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         {eastPlayer && !eastPlayer.isBot && eastPlayer.id !== roomState?.myClientId && (
                           <button
                             type="button"
@@ -1108,21 +1140,21 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 {/* Player Name / Nickname Input for Joiner */}
                 <div className="space-y-1.5 pb-2 border-b border-stone-800">
                   <label htmlFor="input-joiner-name" className="block text-xs font-semibold text-stone-300">
-                    Your Name / Nickname <span className="text-stone-500 font-normal">(Optional)</span>:
+                    Your Name / Nickname <span className="text-amber-400 font-semibold">*</span>:
                   </label>
                   <input
                     type="text"
                     id="input-joiner-name"
                     value={playerName}
                     onChange={(e) => handlePlayerNameChange(e.target.value)}
-                    placeholder="e.g. Priya (defaults to Friend 1/2/3)"
+                    placeholder="e.g. Priya, Rohit"
                     maxLength={18}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-700 text-white text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-500"
                   />
                 </div>
 
                 <label htmlFor="input-room-code" className="block text-xs font-semibold text-stone-300">
-                  Enter 6-Digit Room Code:
+                  Enter Room ID:
                 </label>
 
                 <div className="flex items-center gap-2">
@@ -1134,7 +1166,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                       setJoinInputCode(e.target.value.toUpperCase());
                       setJoinError(null);
                     }}
-                    placeholder="e.g. 742918"
+                    placeholder="e.g. VIMAL or 742918"
                     maxLength={10}
                     className="flex-1 px-4 py-3 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono text-xl sm:text-2xl font-bold tracking-widest text-center focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-600 uppercase"
                     autoFocus
@@ -1170,7 +1202,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 )}
 
                 <p className="text-[11px] text-stone-400 font-sans">
-                  Ask your friend who created the room to share their 6-digit code or WhatsApp invite link.
+                  Ask your friend who created the room to share their Room ID or WhatsApp invite link.
                 </p>
               </div>
 

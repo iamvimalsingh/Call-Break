@@ -72,12 +72,24 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 
           case 'CREATE_ROOM': {
             const { roomCode, playerName, totalRounds, playerId } = (msg.payload as any) || {};
+            const trimmedName = typeof playerName === 'string' ? playerName.trim() : '';
+            if (!trimmedName) {
+              const errMsg: ServerMessage = {
+                type: 'ERROR',
+                payload: {
+                  code: 'INVALID_NAME',
+                  message: 'Please enter your name.',
+                },
+              };
+              socket.send(JSON.stringify(errMsg));
+              break;
+            }
             if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
               clientId = playerId.trim();
             }
             const result = roomManager.createRoom(
               clientId,
-              playerName || 'Host',
+              trimmedName,
               socket,
               roomCode
             );
@@ -101,14 +113,26 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
           }
 
           case 'JOIN_ROOM': {
-            const { roomCode, playerName, playerId } = msg.payload as any;
+            const { roomCode, playerName, playerId } = (msg.payload as any) || {};
+            const trimmedName = typeof playerName === 'string' ? playerName.trim() : '';
+            if (!trimmedName) {
+              const errMsg: ServerMessage = {
+                type: 'ERROR',
+                payload: {
+                  code: 'INVALID_NAME',
+                  message: 'Please enter your name.',
+                },
+              };
+              socket.send(JSON.stringify(errMsg));
+              break;
+            }
             if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
               clientId = playerId.trim();
             }
             const result = roomManager.joinRoom(
               roomCode,
               clientId,
-              playerName || 'Guest',
+              trimmedName,
               socket
             );
 

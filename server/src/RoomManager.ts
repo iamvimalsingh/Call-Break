@@ -47,6 +47,68 @@ export function normalizeRoomCode(code: string): string {
     .toUpperCase();
 }
 
+/**
+ * Generates a unique, canonical Room ID derived from the host's player name.
+ * 
+ * Rules:
+ * 1. Trim, uppercase, remove all non-alphanumeric characters (A-Z, 0-9).
+ * 2. Min length = 3, Max length = 10.
+ *    - If normalized name < 3 chars: pad deterministically (e.g. "V" -> "V01", "VI" -> "VI1", "" -> "ROOM")
+ *    - If normalized name > 10 chars: truncate safely to 10 characters.
+ * 3. Collision handling:
+ *    - If candidate exists in existingRooms, append numeric suffix: 2, 3, 4, ...
+ *    - Ensure (base + suffix) <= 10 characters by trimming base as necessary before appending suffix.
+ *    - Example: VIMAL -> VIMAL, VIMAL2, VIMAL3...
+ *    - Example: VIMALSINGH (10 chars) -> VIMALSINGH, VIMALSING2, VIMALSING3...
+ */
+export function generateRoomCodeFromPlayerName(
+  playerName: string,
+  existingRooms: Map<string, any>
+): string {
+  let normalized = (playerName || '')
+    .trim()
+    .replace(/[^A-Za-z0-9]/g, '')
+    .toUpperCase();
+
+  if (!normalized) {
+    normalized = 'ROOM';
+  }
+
+  // Ensure minimum 3 characters
+  if (normalized.length === 1) {
+    normalized = `${normalized}01`;
+  } else if (normalized.length === 2) {
+    normalized = `${normalized}1`;
+  }
+
+  // Ensure maximum 10 characters
+  if (normalized.length > 10) {
+    normalized = normalized.slice(0, 10);
+  }
+
+  // First candidate is the base normalized ID
+  if (!existingRooms.has(normalized)) {
+    return normalized;
+  }
+
+  // Collision resolution: append suffix 2, 3, 4, ...
+  let suffixNum = 2;
+  while (suffixNum < 100000) {
+    const suffixStr = suffixNum.toString();
+    const maxBaseLen = 10 - suffixStr.length;
+    const truncatedBase = normalized.slice(0, maxBaseLen);
+    const candidate = `${truncatedBase}${suffixStr}`;
+
+    if (!existingRooms.has(candidate)) {
+      return candidate;
+    }
+    suffixNum++;
+  }
+
+  // Fallback random code if exhausted
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 interface DisconnectedSeatInfo {
   position: PlayerPosition;
   name: string;
@@ -1605,7 +1667,10 @@ export class RoomManager {
     return RoomManager.instance;
   }
 
-  public generateRoomCode(): string {
+  public generateRoomCode(playerName?: string): string {
+    if (playerName && playerName.trim().length > 0) {
+      return generateRoomCodeFromPlayerName(playerName, this.rooms);
+    }
     let code: string;
     let attempts = 0;
     do {
@@ -1621,10 +1686,26 @@ export class RoomManager {
     hostSocket: WebSocket,
     requestedCode?: string
   ): { success: boolean; room?: GameRoom; error?: string; errorCode?: string } {
+    const trimmedHostName = (hostName || '').trim();
+    if (!trimmedHostName) {
+      return {
+        success: false,
+        error: 'Please enter your name.',
+        errorCode: 'INVALID_NAME',
+      };
+    }
+
     let roomCode: string;
 
     if (requestedCode && requestedCode.trim().length > 0) {
       const cleanRequested = normalizeRoomCode(requestedCode);
+      if (cleanRequested.length < 3 || cleanRequested.length > 10) {
+        return {
+          success: false,
+          error: 'Room ID must be between 3 and 10 alphanumeric characters.',
+          errorCode: 'INVALID_ROOM_CODE',
+        };
+      }
       if (this.rooms.has(cleanRequested)) {
         return {
           success: false,
@@ -1634,13 +1715,13 @@ export class RoomManager {
       }
       roomCode = cleanRequested;
     } else {
-      roomCode = this.generateRoomCode();
+      roomCode = generateRoomCodeFromPlayerName(trimmedHostName, this.rooms);
     }
 
     // Leave any existing room
     this.leaveRoom(hostClientId);
 
-    const room = new GameRoom(roomCode, hostClientId, hostName, hostSocket);
+    const room = new GameRoom(roomCode, hostClientId, trimmedHostName, hostSocket);
     this.rooms.set(roomCode, room);
     this.clientRoomMap.set(hostClientId, roomCode);
 
@@ -1654,6 +1735,15 @@ export class RoomManager {
     playerName: string,
     socket: WebSocket
   ): { success: boolean; room?: GameRoom; error?: string; errorCode?: string } {
+    const trimmedPlayerName = (playerName || '').trim();
+    if (!trimmedPlayerName) {
+      return {
+        success: false,
+        error: 'Please enter your name.',
+        errorCode: 'INVALID_NAME',
+      };
+    }
+
     const cleanCode = normalizeRoomCode(roomCode);
     const room = this.rooms.get(cleanCode);
 
@@ -1671,7 +1761,7 @@ export class RoomManager {
       this.leaveRoom(clientId, true);
     }
 
-    const result = room.addPlayer(clientId, playerName, socket);
+    const result = room.addPlayer(clientId, trimmedPlayerName, socket);
     if (!result.success) {
       return { success: false, error: result.error, errorCode: (result as any).errorCode || 'JOIN_FAILED' };
     }

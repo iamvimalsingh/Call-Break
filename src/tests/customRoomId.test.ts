@@ -44,13 +44,13 @@ export function buildCustomRoomIdTestSuite(): TestHarness {
     const socket2 = createMockSocket();
 
     // Create initial room
-    const firstResult = manager.createRoom('client_1', 'Host 1', socket1, 'DUPLICATE_TEST');
+    const firstResult = manager.createRoom('client_1', 'Host 1', socket1, 'DUPTEST1');
     if (!firstResult.success || !firstResult.room) {
       throw new Error('Initial room creation should succeed');
     }
 
     // Attempt to create second room with same ID
-    const duplicateResult = manager.createRoom('client_2', 'Host 2', socket2, 'DUPLICATE_TEST');
+    const duplicateResult = manager.createRoom('client_2', 'Host 2', socket2, 'DUPTEST1');
 
     if (duplicateResult.success) {
       throw new Error('Expected duplicate active Room ID creation to fail, but it succeeded');
@@ -61,13 +61,13 @@ export function buildCustomRoomIdTestSuite(): TestHarness {
     }
 
     // Ensure the original room was NOT overwritten or replaced
-    const currentRoom = manager.getRoom('DUPLICATE_TEST');
+    const currentRoom = manager.getRoom('DUPTEST1');
     if (!currentRoom || currentRoom.hostClientId !== 'client_1') {
       throw new Error('Original room was modified or replaced after collision attempt');
     }
   });
 
-  harness.register(category, 'C. no custom ID preserves existing random 6-digit room code generation', () => {
+  harness.register(category, 'C. no custom ID generates canonical Room ID from host player name', () => {
     const manager = new RoomManager();
     const socket = createMockSocket();
 
@@ -77,13 +77,13 @@ export function buildCustomRoomIdTestSuite(): TestHarness {
       throw new Error(`Expected createRoom to succeed without custom code, got: ${result.error}`);
     }
 
-    if (!/^\d{6}$/.test(result.room.roomCode)) {
-      throw new Error(`Expected 6-digit random numeric roomCode, got '${result.room.roomCode}'`);
+    if (result.room.roomCode !== 'HOST3') {
+      throw new Error(`Expected roomCode 'HOST3', got '${result.room.roomCode}'`);
     }
 
     const fetched = manager.getRoom(result.room.roomCode);
     if (!fetched) {
-      throw new Error('RoomManager registry should contain the randomly generated room');
+      throw new Error('RoomManager registry should contain the auto-generated room');
     }
   });
 

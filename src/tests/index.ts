@@ -28,6 +28,7 @@ import { buildWaitingTableVsActiveMatchTestSuite } from './waitingTableVsActiveM
 import { buildActiveTableDiscoveryTestSuite } from './activeTableDiscovery.test';
 import { buildJoinerWaitingRoomFlowTestSuite } from './joinerWaitingRoomFlow.test';
 import { buildNewTableDraftVsCreationTestSuite } from './newTableDraftVsCreation.test';
+import { buildMandatoryNameAndRoomIdPolicyTestSuite } from './mandatoryNameAndRoomIdPolicy.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -55,6 +56,7 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildActiveTableDiscoveryTestSuite());
   composite.include(buildJoinerWaitingRoomFlowTestSuite());
   composite.include(buildNewTableDraftVsCreationTestSuite());
+  composite.include(buildMandatoryNameAndRoomIdPolicyTestSuite());
   return composite;
 }
 
