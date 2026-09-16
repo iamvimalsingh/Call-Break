@@ -55,21 +55,22 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     }
 
     // Trigger turn timeout for SOUTH (the host)
-    if (room.controller) {
-      room.controller.replacePlayerWithBot(PlayerPosition.SOUTH, '🤖 Host Player (Auto-Play)');
+    const rawRoom = room as any;
+    if (rawRoom.controller) {
+      rawRoom.controller.replacePlayerWithBot(PlayerPosition.SOUTH, '🤖 Host Player (Auto-Play)');
       // Simulate the timeout takeover trigger
-      const participant = room.players.get(PlayerPosition.SOUTH);
+      const participant = rawRoom.players.get(PlayerPosition.SOUTH);
       if (participant) {
         participant.isBot = true;
       }
-      room.ensureHumanHost(true);
+      rawRoom.ensureHumanHost(true);
     }
 
     // Host MUST have transferred to p2_human (WEST)
-    if (room.hostClientId !== 'p2_human') {
+    if ((room.hostClientId as string) !== 'p2_human') {
       throw new Error(`Expected host to transfer to p2_human, got ${room.hostClientId}`);
     }
-    const westParticipant = room.players.get(PlayerPosition.WEST);
+    const westParticipant = rawRoom.players.get(PlayerPosition.WEST);
     if (!westParticipant || !westParticipant.isHost || westParticipant.isBot) {
       throw new Error('West participant must be marked as human host');
     }
@@ -86,7 +87,7 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     // p1_host disconnects implicitly (e.g. tab closed or reload)
     room.removeClient('p1_host', false);
 
-    if (room.hostClientId !== 'p2_human') {
+    if ((room.hostClientId as string) !== 'p2_human') {
       throw new Error(`Expected host to transfer to remaining human p2_human, got ${room.hostClientId}`);
     }
   });
@@ -102,7 +103,7 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     // p1_host explicitly exits
     room.removeClient('p1_host', true);
 
-    if (room.hostClientId !== 'p2_human') {
+    if ((room.hostClientId as string) !== 'p2_human') {
       throw new Error(`Expected host to transfer to remaining human p2_human, got ${room.hostClientId}`);
     }
   });
@@ -117,7 +118,8 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     room.removeClient('p1_host', false);
 
     // With 0 humans, bot is allowed to be host
-    const hostParticipant = Array.from(room.players.values()).find((p) => p.isHost);
+    const rawRoom = room as any;
+    const hostParticipant = Array.from(rawRoom.players.values() as any[]).find((p: any) => p.isHost);
     if (!hostParticipant || !hostParticipant.isBot) {
       throw new Error('When 0 humans remain, Bot should hold host role');
     }
@@ -139,10 +141,11 @@ export function buildHostLifecycleTestSuite(): TestHarness {
       throw new Error(`Expected new human to join bot-only table, failed: ${joinResult.error}`);
     }
 
-    if (room.hostClientId !== 'p_new_human') {
+    if ((room.hostClientId as string) !== 'p_new_human') {
       throw new Error(`Incoming human should have become Host, got ${room.hostClientId}`);
     }
-    const newHumanPart = room.players.get(joinResult.position!);
+    const rawRoom = room as any;
+    const newHumanPart = rawRoom.players.get(joinResult.position!);
     if (!newHumanPart || !newHumanPart.isHost || newHumanPart.isBot) {
       throw new Error('New human participant must be marked as human host');
     }
@@ -160,7 +163,7 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     room.removeClient('p1_host', false);
 
     // Host 2 is now the active human host
-    if (room.hostClientId !== 'p2_human') {
+    if ((room.hostClientId as string) !== 'p2_human') {
       throw new Error('p2_human should be current host');
     }
 
@@ -172,7 +175,7 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     }
 
     // Host MUST remain p2_human because p2_human is active connected human
-    if (room.hostClientId !== 'p2_human') {
+    if ((room.hostClientId as string) !== 'p2_human') {
       throw new Error(`Host should remain p2_human, got ${room.hostClientId}`);
     }
   });
@@ -194,7 +197,7 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     }
 
     // Host MUST be p1_host because no other humans exist
-    if (room.hostClientId !== 'p1_host') {
+    if ((room.hostClientId as string) !== 'p1_host') {
       throw new Error(`Host should be p1_host, got ${room.hostClientId}`);
     }
   });
@@ -218,7 +221,7 @@ export function buildHostLifecycleTestSuite(): TestHarness {
     if (!humanTransfer.success) {
       throw new Error(`Host transfer to human failed: ${humanTransfer.error}`);
     }
-    if (room.hostClientId !== 'p2_human') {
+    if ((room.hostClientId as string) !== 'p2_human') {
       throw new Error(`Expected host to be p2_human, got ${room.hostClientId}`);
     }
   });
