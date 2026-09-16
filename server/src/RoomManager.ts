@@ -1468,21 +1468,32 @@ export class RoomManager {
     hostName: string,
     hostSocket: WebSocket,
     requestedCode?: string
-  ): GameRoom {
-    // Leave any existing room
-    this.leaveRoom(hostClientId);
+  ): { success: boolean; room?: GameRoom; error?: string; errorCode?: string } {
+    let roomCode: string;
 
-    let roomCode = requestedCode ? normalizeRoomCode(requestedCode) : this.generateRoomCode();
-    if (this.rooms.has(roomCode)) {
+    if (requestedCode && requestedCode.trim().length > 0) {
+      const cleanRequested = normalizeRoomCode(requestedCode);
+      if (this.rooms.has(cleanRequested)) {
+        return {
+          success: false,
+          error: `Room ID "${cleanRequested}" is already active.`,
+          errorCode: 'ROOM_ALREADY_EXISTS',
+        };
+      }
+      roomCode = cleanRequested;
+    } else {
       roomCode = this.generateRoomCode();
     }
+
+    // Leave any existing room
+    this.leaveRoom(hostClientId);
 
     const room = new GameRoom(roomCode, hostClientId, hostName, hostSocket);
     this.rooms.set(roomCode, room);
     this.clientRoomMap.set(hostClientId, roomCode);
 
     room.broadcastRoomState();
-    return room;
+    return { success: true, room };
   }
 
   public joinRoom(

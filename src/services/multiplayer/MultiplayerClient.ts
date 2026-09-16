@@ -45,6 +45,35 @@ export type JoinRequestStatusListener = (payload: JoinRequestStatusPayload) => v
 const PLAYER_ID_STORAGE_KEY = 'cb_player_id';
 const ACTIVE_TABLE_STORAGE_KEY = 'cb_active_table_id';
 const CONFIRMED_SEAT_STORAGE_KEY = 'cb_confirmed_seat';
+const PREFERRED_ROOM_STORAGE_KEY = 'cb_preferred_room_id';
+
+/**
+ * Returns the preferred room ID persisted in localStorage, if any.
+ */
+export function getPreferredRoomId(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem(PREFERRED_ROOM_STORAGE_KEY);
+      return val && val.trim().length > 0 ? val.trim().toUpperCase() : null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Persists or clears the preferred room ID in localStorage.
+ */
+export function setPreferredRoomId(roomId: string | null): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (roomId && roomId.trim().length > 0) {
+        localStorage.setItem(PREFERRED_ROOM_STORAGE_KEY, roomId.trim().toUpperCase());
+      } else {
+        localStorage.removeItem(PREFERRED_ROOM_STORAGE_KEY);
+      }
+    }
+  } catch {}
+}
 
 /**
  * Returns the currently active table ID persisted in localStorage, if any.

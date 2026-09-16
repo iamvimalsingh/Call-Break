@@ -65,12 +65,24 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
             if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
               clientId = playerId.trim();
             }
-            const room = roomManager.createRoom(
+            const result = roomManager.createRoom(
               clientId,
               playerName || 'Host',
               socket,
               roomCode
             );
+            if (!result.success || !result.room) {
+              const errMsg: ServerMessage = {
+                type: 'ERROR',
+                payload: {
+                  code: result.errorCode || 'CREATE_FAILED',
+                  message: result.error || 'Room ID already active',
+                },
+              };
+              socket.send(JSON.stringify(errMsg));
+              break;
+            }
+            const room = result.room;
             if (totalRounds && (totalRounds === 5 || totalRounds === 10)) {
               room.totalRounds = totalRounds;
             }

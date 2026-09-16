@@ -20,6 +20,8 @@ import { buildSoloWeightedDealTestSuite } from './soloWeightedDeal.test';
 import { buildMidGameJoinTestSuite } from './midGameJoin.test';
 import { buildRoundLifecycleTestSuite } from './roundLifecycle.test';
 import { buildHostTurnTimerTestSuite } from './hostTurnTimer.test';
+import { buildCustomRoomIdTestSuite } from './customRoomId.test';
+import { buildPreferredRoomIdTestSuite } from './preferredRoomIdStorage.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -39,6 +41,8 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildMidGameJoinTestSuite());
   composite.include(buildRoundLifecycleTestSuite());
   composite.include(buildHostTurnTimerTestSuite());
+  composite.include(buildCustomRoomIdTestSuite());
+  composite.include(buildPreferredRoomIdTestSuite());
   return composite;
 }
 

@@ -30,7 +30,11 @@ import {
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
 import { transitions } from '../../core/animation/animationConfig';
-import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
+import {
+  sharedMultiplayerClient,
+  getPreferredRoomId,
+  setPreferredRoomId,
+} from '../../services/multiplayer/MultiplayerClient';
 import { ConnectionState, RoomParticipant, RoomState } from '../../models/multiplayer';
 import { PlayerPosition } from '../../models/player';
 
@@ -67,7 +71,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       return '';
     }
   });
-  const [roomCode, setRoomCode] = useState<string>(() => generateRoomCode());
+  const [roomCode, setRoomCode] = useState<string>(() => {
+    const preferred = getPreferredRoomId();
+    if (preferred && preferred.trim().length > 0) {
+      return preferred.trim().toUpperCase();
+    }
+    return generateRoomCode();
+  });
   const [joinInputCode, setJoinInputCode] = useState<string>(initialRoomCode || prefilledRoomCode || '');
   const [copied, setCopied] = useState(false);
   const [autoFillBots, setAutoFillBots] = useState(true);
@@ -148,6 +158,12 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
         setHasJoinedRoom(true);
         setJoinError(null);
       }
+      if (activeTab === 'create') {
+        setHasJoinedRoom(true);
+        setJoinError(null);
+        // Only after successful room creation: save the created custom Room ID
+        setPreferredRoomId(state.roomCode);
+      }
     });
 
     const unsubGameStarted = sharedMultiplayerClient.onGameStarted((code) => {
@@ -168,6 +184,8 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
         err.message?.toLowerCase().includes('no active table')
       ) {
         msg = 'Table not found. Please check the 6-digit code.';
+      } else if (err.code === 'ROOM_ALREADY_EXISTS') {
+        msg = err.message || 'Room ID already active. Please choose another Room ID.';
       }
       setJoinError(msg);
       setIsJoining(false);
@@ -275,9 +293,25 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
     }
   };
 
+  const handleApplyCustomRoomCode = (customCode?: string) => {
+    const raw = customCode !== undefined ? customCode : roomCode;
+    const clean = raw.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (!clean || clean.length < 3) {
+      setJoinError('Please enter at least 3 alphanumeric characters for the Room ID.');
+      soundManager.play('warning');
+      return;
+    }
+    setJoinError(null);
+    setRoomCode(clean);
+    soundManager.play('click');
+    const effectiveHost = playerName.trim() || 'Host (Player 1)';
+    sharedMultiplayerClient.createRoom(effectiveHost, clean);
+  };
+
   const handleRegenerateCode = () => {
     const newCode = generateRoomCode();
     setRoomCode(newCode);
+    setJoinError(null);
     soundManager.play('deal');
     const effectiveHost = playerName.trim() || 'Host (Player 1)';
     sharedMultiplayerClient.createRoom(effectiveHost, newCode);
@@ -523,20 +557,61 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 </div>
               )}
 
-              {/* Room Code Card */}
-              <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-900/60 flex flex-col items-center text-center shadow-inner relative">
-                <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold mb-1">
-                  Private Table Code
-                </span>
-                <div className="flex items-center gap-2 my-1">
-                  <span
-                    id="display-room-code"
-                    className="font-mono text-3xl sm:text-4xl font-black text-amber-300 tracking-wider select-all"
-                  >
-                    {roomCode}
+              {/* Room Code Card & Preferred/Custom Room ID Input */}
+              <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-900/60 flex flex-col items-center text-center shadow-inner relative space-y-3">
+                <div className="w-full flex items-center justify-between px-1">
+                  <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold">
+                    Room ID / Code
+                  </span>
+                  <span className="text-[10px] text-stone-400">
+                    {hasJoinedRoom ? 'Active Table' : 'Custom or Random'}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 mt-2">
+
+                <div className="w-full flex items-center gap-2">
+                  <input
+                    type="text"
+                    id="input-create-room-code"
+                    value={roomCode}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+                      setRoomCode(clean);
+                      setJoinError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleApplyCustomRoomCode();
+                      }
+                    }}
+                    placeholder="e.g. VIP888"
+                    maxLength={10}
+                    className="flex-1 px-3 py-2 rounded-xl bg-stone-900 border border-amber-700/60 text-amber-300 font-mono text-2xl sm:text-3xl font-black tracking-widest text-center focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 uppercase placeholder:text-stone-600"
+                  />
+                  {!hasJoinedRoom && (
+                    <button
+                      type="button"
+                      id="btn-apply-custom-room-code"
+                      onClick={() => handleApplyCustomRoomCode()}
+                      className="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold shrink-0 cursor-pointer transition-colors shadow-sm"
+                      title="Apply Room ID"
+                    >
+                      Set ID
+                    </button>
+                  )}
+                </div>
+
+                {joinError && activeTab === 'create' && (
+                  <div
+                    id="create-room-error"
+                    className="w-full p-2.5 rounded-xl bg-rose-950/80 border border-rose-700/80 text-rose-300 text-xs font-semibold flex items-center justify-center gap-2 text-center"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                    <span>{joinError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 mt-1">
                   <button
                     type="button"
                     id="btn-copy-room-code"
@@ -556,16 +631,16 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     )}
                   </button>
 
-                  {isHost && (
-                    <button
-                      type="button"
-                      onClick={handleRegenerateCode}
-                      className="px-2.5 py-1.5 rounded-xl bg-stone-900/80 hover:bg-stone-800 text-stone-400 hover:text-stone-200 border border-stone-800 text-xs font-mono cursor-pointer transition-colors"
-                      title="Generate another code"
-                    >
-                      New Code
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    id="btn-regenerate-room-code"
+                    onClick={handleRegenerateCode}
+                    className="px-2.5 py-1.5 rounded-xl bg-stone-900/80 hover:bg-stone-800 text-stone-400 hover:text-stone-200 border border-stone-800 text-xs font-mono cursor-pointer transition-colors flex items-center gap-1"
+                    title="Generate another code"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Random ID</span>
+                  </button>
                 </div>
               </div>
 
