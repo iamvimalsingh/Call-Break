@@ -751,7 +751,14 @@ export const GameShell: React.FC = () => {
       {/* Live Table Room Lobby Modal (Create / Join & WhatsApp Sharing) */}
       <RoomLobbyModal
         isOpen={isRoomLobbyOpen}
-        onClose={() => setIsRoomLobbyOpen(false)}
+        onClose={() => {
+          setIsRoomLobbyOpen(false);
+          setIsHomeOpen(true);
+        }}
+        onBackToModes={() => {
+          setIsRoomLobbyOpen(false);
+          setIsHomeOpen(true);
+        }}
         onStartRoomMatch={handleStartRoomMatch}
         initialTab={roomLobbyTab}
         prefilledRoomCode={prefilledRoomCode}

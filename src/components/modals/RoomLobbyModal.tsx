@@ -438,7 +438,16 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
       <div
         id="modal-room-lobby-backdrop"
         className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-start sm:items-center justify-center p-2 sm:p-6 overflow-y-auto select-none pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))]"
-        onClick={onClose}
+        onClick={() => {
+          soundManager.play('click');
+          if (hasJoinedRoom) {
+            handleLeaveLobby();
+          } else if (onBackToModes) {
+            onBackToModes();
+          } else {
+            onClose();
+          }
+        }}
       >
         <motion.div
           id="modal-room-lobby-card"
@@ -517,7 +526,13 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 id="btn-close-room-lobby"
                 onClick={() => {
                   soundManager.play('click');
-                  onClose();
+                  if (hasJoinedRoom) {
+                    handleLeaveLobby();
+                  } else if (onBackToModes) {
+                    onBackToModes();
+                  } else {
+                    onClose();
+                  }
                 }}
                 className="w-8 h-8 rounded-full bg-stone-800/80 hover:bg-stone-700 text-stone-300 flex items-center justify-center cursor-pointer transition-colors"
                 aria-label="Close modal"
