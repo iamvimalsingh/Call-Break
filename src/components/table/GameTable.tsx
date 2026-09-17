@@ -12,7 +12,7 @@ import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GameMode, GameState, GameStatus } from '../../models/gameState';
 import { PlayerPosition, PlayerState } from '../../models/player';
-import { Card } from '../../models/card';
+import { Card, SUIT_CONFIG } from '../../models/card';
 import { TurnTimerPayload } from '../../models/multiplayer';
 import { PlayerSlot } from './PlayerSlot';
 import { CenterPlayArea } from './CenterPlayArea';
@@ -112,6 +112,23 @@ export const GameTable: React.FC<GameTableProps> = ({
 
   const winnerPos = isShowingCompleted && lastCompletedTrick ? lastCompletedTrick.winner : null;
 
+  const lastWinningCardObj = React.useMemo(() => {
+    if (!lastCompletedTrick) return null;
+    return lastCompletedTrick.cards.find((c) => c.playerPosition === lastCompletedTrick.winner) || null;
+  }, [lastCompletedTrick]);
+
+  const winningCardText = lastWinningCardObj
+    ? `${lastWinningCardObj.card.rank}${SUIT_CONFIG[lastWinningCardObj.card.suit].symbol}`
+    : '';
+
+  const winnerDirMap: Record<PlayerPosition, string> = {
+    [PlayerPosition.SOUTH]: 'S',
+    [PlayerPosition.WEST]: 'W',
+    [PlayerPosition.NORTH]: 'N',
+    [PlayerPosition.EAST]: 'E',
+  };
+  const winnerDir = lastCompletedTrick ? winnerDirMap[lastCompletedTrick.winner] : '';
+
   // Compact Trick Winner Notification
   const winnerToastText = React.useMemo(() => {
     if (!isShowingCompleted || !winnerPos || !lastCompletedTrick) return null;
@@ -192,6 +209,18 @@ export const GameTable: React.FC<GameTableProps> = ({
 
         {/* West Player Column (Left side) with status block directly ABOVE player card */}
         <div id="column-west-player" className="w-auto flex flex-col items-center gap-1 z-10 shrink-0">
+          {/* Last Win Badge (Above West Player area, hidden until first trick completed) */}
+          {lastCompletedTrick && (
+            <div id="last-win-badge" className="px-1.5 py-1 mb-0.5 rounded-lg bg-stone-950/95 border border-emerald-500/50 text-center shadow-md flex flex-col items-center justify-center w-[76px] xs:w-[86px] sm:w-[96px] md:w-[104px]">
+              <div className="text-[6.5px] xs:text-[7px] sm:text-[7.5px] font-mono font-bold uppercase tracking-wider text-amber-400 leading-none mb-0.5">
+                LAST WIN
+              </div>
+              <div className="text-[8px] xs:text-[8.5px] sm:text-[9.5px] font-mono font-bold text-white leading-none">
+                {winnerDir} • {winningCardText}
+              </div>
+            </div>
+          )}
+
           {/* Status block directly ABOVE West Player card */}
           <div id="west-status-block" className="flex flex-col items-center text-center gap-0.5 w-[76px] xs:w-[86px] sm:w-[96px] md:w-[104px] pointer-events-none mb-0.5">
             {/* Line 1: [Trick result / winner message] */}
