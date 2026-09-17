@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Edit3,
   Pencil,
+  ArrowRight,
 } from 'lucide-react';
 import { soundManager } from '../../core/sound/SoundManager';
 import { useReducedMotion } from '../../core/animation/useReducedMotion';
@@ -1274,10 +1275,11 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                 {showActiveTables && (
                   <div id="active-tables-container" className="p-3 rounded-2xl bg-stone-950/90 border border-stone-800 space-y-2">
                     <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-stone-400 font-semibold px-2 pb-1 border-b border-stone-800/80">
-                      <span className="w-16">ID</span>
-                      <span className="flex-1 text-left px-2">HOST</span>
+                      <span className="w-14">ID</span>
+                      <span className="flex-1 text-left px-1">HOST</span>
                       <span className="w-16 text-center">HUMANS</span>
-                      <span className="w-20 text-right">STATUS</span>
+                      <span className="w-16 text-right">STATUS</span>
+                      <span className="w-28 text-right sm:block hidden">ACTION</span>
                     </div>
 
                     {isLoadingActiveTables && activeTables.length === 0 ? (
@@ -1290,37 +1292,71 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                         No active tables available.
                       </div>
                     ) : (
-                      <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                        {activeTables.map((table) => (
-                          <button
-                            key={table.roomCode}
-                            type="button"
-                            id={`active-table-row-${table.roomCode}`}
-                            onClick={() => handleSelectActiveTable(table.roomCode)}
-                            className="w-full flex items-center justify-between px-2 py-2 rounded-xl bg-stone-900/80 hover:bg-amber-950/40 hover:border-amber-700/60 border border-stone-800 text-xs font-medium cursor-pointer transition-all text-left group"
-                          >
-                            <span className="w-16 font-mono font-bold text-amber-400 group-hover:text-amber-300">
-                              {table.roomCode}
-                            </span>
-                            <span className="flex-1 text-left px-2 text-stone-200 truncate">
-                              {table.hostName}
-                            </span>
-                            <span className="w-16 text-center font-mono text-stone-300">
-                              {table.humanCount}/{table.totalSeats}
-                            </span>
-                            <span className="w-20 text-right">
-                              <span
-                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${
-                                  table.status === 'WAITING'
-                                    ? 'bg-amber-950/80 border border-amber-600/60 text-amber-300'
-                                    : 'bg-emerald-950/80 border border-emerald-600/60 text-emerald-300'
-                                }`}
-                              >
-                                {table.status}
-                              </span>
-                            </span>
-                          </button>
-                        ))}
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar">
+                        {activeTables.map((table) => {
+                          const isFull = table.humanCount >= table.totalSeats || !table.isJoinable;
+                          return (
+                            <div
+                              key={table.roomCode}
+                              id={`active-table-row-${table.roomCode}`}
+                              onClick={() => {
+                                if (!isFull) handleSelectActiveTable(table.roomCode);
+                              }}
+                              className={`w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2.5 rounded-xl bg-stone-900/80 border border-stone-800 text-xs font-medium transition-all ${
+                                isFull ? 'opacity-80 cursor-default' : 'cursor-pointer hover:border-amber-700/60 hover:bg-amber-950/30'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-4 flex-1 min-w-0">
+                                <span className="w-14 font-mono font-bold text-amber-400 shrink-0">
+                                  {table.roomCode}
+                                </span>
+                                <span className="flex-1 text-left px-1 text-stone-200 truncate">
+                                  {table.hostName}
+                                </span>
+                                <span className="w-16 text-center font-mono text-stone-300 shrink-0">
+                                  {table.humanCount}/{table.totalSeats}
+                                </span>
+                                <span className="w-16 text-right shrink-0">
+                                  <span
+                                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${
+                                      table.status === 'WAITING'
+                                        ? 'bg-amber-950/80 border border-amber-600/60 text-amber-300'
+                                        : 'bg-emerald-950/80 border border-emerald-600/60 text-emerald-300'
+                                    }`}
+                                  >
+                                    {table.status}
+                                  </span>
+                                </span>
+                              </div>
+
+                              <div className="flex items-center justify-end sm:w-auto w-full pt-1 sm:pt-0">
+                                <button
+                                  type="button"
+                                  id={`btn-join-active-table-${table.roomCode}`}
+                                  disabled={isFull}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!isFull) handleSelectActiveTable(table.roomCode);
+                                  }}
+                                  className={`w-full sm:w-auto px-4 py-2 sm:py-1.5 rounded-lg text-xs sm:text-sm font-medium shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer min-h-[40px] sm:min-h-0 ${
+                                    isFull
+                                      ? 'bg-stone-800 text-stone-400 cursor-not-allowed opacity-60 shadow-none'
+                                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                  }`}
+                                >
+                                  {isFull ? (
+                                    <span>Full ({table.humanCount}/{table.totalSeats})</span>
+                                  ) : (
+                                    <>
+                                      <span>Join Table</span>
+                                      <ArrowRight className="w-3.5 h-3.5" />
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
