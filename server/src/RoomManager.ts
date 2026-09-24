@@ -145,6 +145,11 @@ export class GameRoom {
   // Pending join requests awaiting Host approval
   private pendingJoinRequests = new Map<string, PendingJoinRequestInfo>();
 
+  private creatorName: string;
+  private creatorClientId: string;
+  private lobbyGraceTimer: NodeJS.Timeout | null = null;
+  private lobbyOrphanedAt: number | null = null;
+
   private controller: AuthoritativeGameController | null = null;
   private unsubscribeEvents: (() => void) | null = null;
   private unsubscribeState: (() => void) | null = null;
@@ -169,6 +174,9 @@ export class GameRoom {
       cleanHostName && !/^(host|player|player 1|you)$/i.test(cleanHostName)
         ? cleanHostName
         : 'Host (Player 1)';
+
+    this.creatorName = finalHostName;
+    this.creatorClientId = hostClientId;
 
     // Every room strictly contains exactly 4 stable gameplay seats: P1, P2, P3, P4
     // Seat P1 (South) is permanently bound to Host
@@ -266,6 +274,29 @@ export class GameRoom {
   public isSocketOpen(clientId: string): boolean {
     const ws = this.clientSockets.get(clientId);
     return ws ? ws.readyState === WebSocket.OPEN : false;
+  }
+
+  public isLobbyGraceActive(): boolean {
+    if (this.status !== 'LOBBY' || this.isDestroyed) return false;
+    if (!this.lobbyOrphanedAt) return false;
+    return Date.now() - this.lobbyOrphanedAt <= 300000;
+  }
+
+  public getLobbyOrphanedAt(): number | null {
+    return this.lobbyOrphanedAt;
+  }
+
+  public expireLobbyGraceForTesting(customCleanup?: () => void): void {
+    if (this.lobbyGraceTimer) {
+      clearTimeout(this.lobbyGraceTimer);
+      this.lobbyGraceTimer = null;
+    }
+    this.lobbyOrphanedAt = null;
+    if (customCleanup) {
+      customCleanup();
+    } else if (this.status === 'LOBBY' && this.getConnectedClientCount() === 0 && !this.hasActiveReservations()) {
+      RoomManager.getInstance().cleanupRoom(this.roomCode);
+    }
   }
 
   public addPlayer(
@@ -629,13 +660,30 @@ export class GameRoom {
     }
 
     // 3. LOBBY status logic:
-    // Find next available Bot seat in SEAT_ORDER (West/P2, North/P3, East/P4, South/P1)
-    let openPosition: PlayerPosition | null = null;
-    for (const pos of SEAT_ORDER) {
-      const p = this.players.get(pos);
-      if (p && p.isBot) {
-        openPosition = pos;
-        break;
+    if (this.lobbyGraceTimer) {
+      clearTimeout(this.lobbyGraceTimer);
+      this.lobbyGraceTimer = null;
+    }
+    this.lobbyOrphanedAt = null;
+
+    // If returning player has a saved position (e.g. SOUTH) and that position is currently a Bot, pick that position.
+    let preferredPos: PlayerPosition | null = null;
+    const savedDisconnect =
+      this.disconnectedSeats.get(clientId) ||
+      (cleanPlayerName ? this.disconnectedSeats.get(cleanPlayerName.toLowerCase()) : undefined);
+    if (savedDisconnect && this.players.get(savedDisconnect.position)?.isBot) {
+      preferredPos = savedDisconnect.position;
+    }
+
+    // Find next available Bot seat (preferring saved position if available)
+    let openPosition: PlayerPosition | null = preferredPos;
+    if (!openPosition) {
+      for (const pos of SEAT_ORDER) {
+        const p = this.players.get(pos);
+        if (p && p.isBot) {
+          openPosition = pos;
+          break;
+        }
       }
     }
 
@@ -648,7 +696,7 @@ export class GameRoom {
     if (openPosition === PlayerPosition.WEST) defaultName = 'Friend 1';
     else if (openPosition === PlayerPosition.NORTH) defaultName = 'Friend 2';
     else if (openPosition === PlayerPosition.EAST) defaultName = 'Friend 3';
-    else if (openPosition === PlayerPosition.SOUTH) defaultName = 'Host (Player 1)';
+    else if (openPosition === PlayerPosition.SOUTH) defaultName = this.creatorName || 'Host (Player 1)';
 
     const rawIncoming = (cleanPlayerName || '').trim();
     const isGeneric =
@@ -822,6 +870,39 @@ export class GameRoom {
     this.ensureHumanHost(true);
 
     if (this.status === 'LOBBY') {
+      if (isExplicit) {
+        this.clearSeatReservation(pos);
+        if (this.lobbyGraceTimer) {
+          clearTimeout(this.lobbyGraceTimer);
+          this.lobbyGraceTimer = null;
+        }
+        this.lobbyOrphanedAt = null;
+      } else {
+        const seatInfo: DisconnectedSeatInfo = {
+          position: pos,
+          name: cleanPlayerName,
+          originalClientId: clientId,
+          wasHost,
+          disconnectedAt: Date.now(),
+        };
+        this.disconnectedSeats.set(clientId, seatInfo);
+        if (cleanPlayerName) {
+          this.disconnectedSeats.set(cleanPlayerName.toLowerCase(), seatInfo);
+        }
+
+        if (this.getConnectedClientCount() === 0) {
+          if (!this.lobbyGraceTimer) {
+            this.lobbyOrphanedAt = Date.now();
+            this.lobbyGraceTimer = setTimeout(() => {
+              this.lobbyGraceTimer = null;
+              this.lobbyOrphanedAt = null;
+              if (this.status === 'LOBBY' && this.getConnectedClientCount() === 0 && !this.hasActiveReservations()) {
+                RoomManager.getInstance().cleanupRoom(this.roomCode);
+              }
+            }, 300000);
+          }
+        }
+      }
       this.broadcastRoomState();
     } else if (this.status === 'FINISHED') {
       this.broadcastRoomState();
@@ -1250,6 +1331,12 @@ export class GameRoom {
       return { success: false, error: 'Game is already in progress.' };
     }
 
+    if (this.lobbyGraceTimer) {
+      clearTimeout(this.lobbyGraceTimer);
+      this.lobbyGraceTimer = null;
+    }
+    this.lobbyOrphanedAt = null;
+
     // Clean up previous controller resources if restarting a match
     if (this.unsubscribeEvents) {
       this.unsubscribeEvents();
@@ -1668,6 +1755,12 @@ export class GameRoom {
     if (this.isDestroyed) return;
     this.isDestroyed = true;
 
+    if (this.lobbyGraceTimer) {
+      clearTimeout(this.lobbyGraceTimer);
+      this.lobbyGraceTimer = null;
+    }
+    this.lobbyOrphanedAt = null;
+
     if (this.finishedCleanupTimer) {
       clearTimeout(this.finishedCleanupTimer);
       this.finishedCleanupTimer = null;
@@ -1699,9 +1792,10 @@ export class GameRoom {
 
     const connectedHumanCount = this.getConnectedClientCount();
     const hasReservations = this.hasActiveReservations();
+    const isLobbyGrace = this.isLobbyGraceActive();
 
-    // Must be associated with at least one live human or valid active reservation
-    if (connectedHumanCount === 0 && !hasReservations) {
+    // Must be associated with at least one live human, valid active reservation, or active lobby grace
+    if (connectedHumanCount === 0 && !hasReservations && !isLobbyGrace) {
       return null;
     }
 
@@ -1715,12 +1809,15 @@ export class GameRoom {
     // If PLAYING and no bots are available to takeover, cannot accept new humans
     if (this.status === 'PLAYING' && botCount === 0) return null;
 
-    const hostParticipant =
-      playersList.find((p) => p.id === this.hostClientId && !p.isBot) ||
-      playersList.find((p) => p.isHost && !p.isBot) ||
-      playersList.find((p) => p.isHost) ||
-      playersList[0];
-    const hostName = hostParticipant ? hostParticipant.name : 'Host';
+    let hostName = this.creatorName || 'Host';
+    if (connectedHumanCount > 0) {
+      const hostParticipant =
+        playersList.find((p) => p.id === this.hostClientId && !p.isBot) ||
+        playersList.find((p) => p.isHost && !p.isBot);
+      if (hostParticipant) {
+        hostName = hostParticipant.name;
+      }
+    }
 
     if (this.status === 'LOBBY') {
       return {
@@ -1908,6 +2005,13 @@ export class RoomManager {
       return;
     }
 
+    if (room.getStatus() === 'LOBBY') {
+      if (room.getConnectedClientCount() === 0 && !room.isLobbyGraceActive()) {
+        this.cleanupRoom(cleanCode);
+      }
+      return;
+    }
+
     if (room.getConnectedClientCount() === 0 && !room.hasActiveReservations()) {
       this.cleanupRoom(cleanCode);
     }
@@ -1934,7 +2038,8 @@ export class RoomManager {
     for (const [code, room] of this.rooms.entries()) {
       if (
         (room.getStatus() === 'FINISHED' && room.getConnectedClientCount() === 0) ||
-        (room.getConnectedClientCount() === 0 && !room.hasActiveReservations())
+        (room.getStatus() === 'LOBBY' && room.getConnectedClientCount() === 0 && !room.isLobbyGraceActive()) ||
+        (room.getStatus() === 'PLAYING' && room.getConnectedClientCount() === 0 && !room.hasActiveReservations())
       ) {
         deadRoomCodes.push(code);
         continue;

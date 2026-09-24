@@ -270,5 +270,197 @@ export function buildActiveTableDiscoveryTestSuite(): TestHarness {
     }
   );
 
+  // Test J: Full 14-Point Lobby Grace & Lifecycle Verification Suite
+  harness.register(
+    category,
+    'J1-J5: WAITING room creation, host disconnect, 5-minute lobby grace presence, and discovery',
+    async () => {
+      const roomMgr = new RoomManager();
+      const hostSocket = createMockSocket();
+      
+      // 1. CREATE WAITING room
+      const createRes = roomMgr.createRoom('host_1', 'Vimal', hostSocket, 'GRACE100');
+      if (!createRes.success || !createRes.room) {
+        throw new Error('Failed to create WAITING room');
+      }
+      const room = createRes.room;
+      if (room.getStatus() !== 'LOBBY') {
+        throw new Error(`Expected LOBBY status, got ${room.getStatus()}`);
+      }
+      if ((room as any).hostClientId !== 'host_1') {
+        throw new Error('Expected host_1 to be room host');
+      }
+
+      // 2. Host disconnects
+      roomMgr.leaveRoom('host_1', false);
+
+      // 3. Room is still present immediately after disconnect
+      const roomAfterDc = roomMgr.getRoom('GRACE100');
+      if (!roomAfterDc) {
+        throw new Error('Room was destroyed immediately upon host disconnect!');
+      }
+
+      // 4. Room remains present before 5 minutes (grace active)
+      if (!roomAfterDc.isLobbyGraceActive()) {
+        throw new Error('Expected isLobbyGraceActive() to be true');
+      }
+
+      // 5. Room appears in Active Tables during grace
+      const activeSummaries = roomMgr.getActiveRoomsSummary();
+      const found = activeSummaries.find((r) => r.roomCode === 'GRACE100');
+      if (!found) {
+        throw new Error('Waiting room with disconnected host missing from Active Tables');
+      }
+      if (found.hostName !== 'Vimal') {
+        throw new Error(`Expected creator hostName Vimal, got ${found.hostName}`);
+      }
+      if (found.status !== 'WAITING') {
+        throw new Error(`Expected status WAITING, got ${found.status}`);
+      }
+    }
+  );
+
+  harness.register(
+    category,
+    'J6-J7: Another Human joins during grace and duplicate roomCode is rejected',
+    async () => {
+      const roomMgr = new RoomManager();
+      roomMgr.createRoom('host_orig', 'OriginalHost', createMockSocket(), 'GRACE200');
+      roomMgr.leaveRoom('host_orig', false);
+
+      // 7. Same custom Room ID cannot be recreated during grace
+      const duplicateCreate = roomMgr.createRoom('intruder', 'Intruder', createMockSocket(), 'GRACE200');
+      if (duplicateCreate.success || duplicateCreate.errorCode !== 'ROOM_ALREADY_EXISTS') {
+        throw new Error('Expected duplicate room creation to fail with ROOM_ALREADY_EXISTS');
+      }
+
+      // 6. Another Human can JOIN while original Host is disconnected
+      const guestSocket = createMockSocket();
+      const joinRes = roomMgr.joinRoom('GRACE200', 'guest_1', 'GuestPlayer', guestSocket);
+      if (!joinRes.success) {
+        throw new Error(`Guest failed to join orphaned lobby: ${joinRes.error}`);
+      }
+
+      const room = roomMgr.getRoom('GRACE200')!;
+      // Promoted to Human Host
+      if ((room as any).hostClientId !== 'guest_1') {
+        throw new Error('Expected joined human guest_1 to become Table Host');
+      }
+    }
+  );
+
+  harness.register(
+    category,
+    'J8-J10: Host returns within grace: non-stealing if other Human is Host, regains if alone',
+    async () => {
+      const roomMgr = new RoomManager();
+      
+      // Scenario A: Alone in room -> returns and regains Host
+      roomMgr.createRoom('host_solo', 'SoloHost', createMockSocket(), 'GRACE300');
+      roomMgr.leaveRoom('host_solo', false);
+      
+      const rejoinSolo = roomMgr.joinRoom('GRACE300', 'host_solo', 'SoloHost', createMockSocket());
+      if (!rejoinSolo.success) {
+        throw new Error('Original solo host failed to rejoin');
+      }
+      const roomSolo = roomMgr.getRoom('GRACE300')!;
+      if ((roomSolo as any).hostClientId !== 'host_solo') {
+        throw new Error('Expected original host to regain Host role when returning to empty room');
+      }
+
+      // Scenario B: Another Human joined -> returning host does NOT steal Host
+      roomMgr.createRoom('host_prev', 'PrevHost', createMockSocket(), 'GRACE400');
+      roomMgr.leaveRoom('host_prev', false);
+      
+      // Guest joins and becomes Host
+      roomMgr.joinRoom('GRACE400', 'new_human', 'NewHumanHost', createMockSocket());
+      const roomWithNewHost = roomMgr.getRoom('GRACE400')!;
+      if ((roomWithNewHost as any).hostClientId !== 'new_human') {
+        throw new Error('Expected new_human to be Table Host');
+      }
+
+      // PrevHost returns
+      const rejoinWithOther = roomMgr.joinRoom('GRACE400', 'host_prev', 'PrevHost', createMockSocket());
+      if (!rejoinWithOther.success) {
+        throw new Error('Original host failed to join room with existing human host');
+      }
+      if ((roomWithNewHost as any).hostClientId !== 'new_human') {
+        throw new Error('Returning original host illegally stole Host role from active human host');
+      }
+      const prevPart = (roomWithNewHost as any).players.get((roomWithNewHost as any).clientPositions.get('host_prev'));
+      if (prevPart?.isHost === true) {
+        throw new Error('Returning original host has isHost = true while another human is host');
+      }
+    }
+  );
+
+  harness.register(
+    category,
+    'J11-J12: Grace expiry destroys empty room, but preserves room with active Humans',
+    async () => {
+      const roomMgr = new RoomManager();
+
+      // 11. Empty room destroyed at expiry
+      roomMgr.createRoom('host_exp', 'ExpiringHost', createMockSocket(), 'GRACE500');
+      const emptyRoom = roomMgr.getRoom('GRACE500')!;
+      roomMgr.leaveRoom('host_exp', false);
+      
+      emptyRoom.expireLobbyGraceForTesting(() => roomMgr.cleanupRoom('GRACE500'));
+      if (roomMgr.getRoom('GRACE500')) {
+        throw new Error('Empty room was not destroyed upon grace expiration');
+      }
+      // After destruction, room code can now be recreated
+      const recreateRes = roomMgr.createRoom('new_creator', 'NewCreator', createMockSocket(), 'GRACE500');
+      if (!recreateRes.success) {
+        throw new Error('Failed to recreate room code after expired room was destroyed');
+      }
+
+      // 12. Active room with other Humans is NOT destroyed when 5 minutes pass
+      roomMgr.createRoom('host_orig_keep', 'OriginalHostKeep', createMockSocket(), 'GRACE600');
+      const activeRoom = roomMgr.getRoom('GRACE600')!;
+      roomMgr.leaveRoom('host_orig_keep', false);
+      // Other human joins
+      roomMgr.joinRoom('GRACE600', 'active_human', 'ActiveHuman', createMockSocket());
+      
+      activeRoom.expireLobbyGraceForTesting(() => roomMgr.cleanupRoomIfEmpty('GRACE600'));
+      if (!roomMgr.getRoom('GRACE600')) {
+        throw new Error('Active room with connected human was incorrectly destroyed at grace expiry');
+      }
+      if ((activeRoom as any).hostClientId !== 'active_human') {
+        throw new Error('Active human lost host role');
+      }
+    }
+  );
+
+  harness.register(
+    category,
+    'J13-J14: PLAYING 45-second reservation and ROOM_NOT_FOUND behavior intact',
+    async () => {
+      const roomMgr = new RoomManager();
+      
+      // 13. PLAYING 45-second reservation
+      roomMgr.createRoom('h_play', 'PlayHost', createMockSocket(), 'PLAY700');
+      const playRoom = roomMgr.getRoom('PLAY700')!;
+      playRoom.startMatch('h_play', true, 5);
+      
+      // Implicit disconnect during match
+      roomMgr.leaveRoom('h_play', false);
+      if (!playRoom.hasActiveReservations()) {
+        throw new Error('Expected active 45-second reservation during PLAYING disconnect');
+      }
+      // Reconnects within 45s
+      const rejoinRes = roomMgr.joinRoom('PLAY700', 'h_play', 'PlayHost', createMockSocket());
+      if (!rejoinRes.success) {
+        throw new Error('Failed to reconnect to playing room within 45s');
+      }
+
+      // 14. ROOM_NOT_FOUND error on non-existent room code
+      const invalidJoin = roomMgr.joinRoom('NONEXISTENT_999', 'player_x', 'Guest', createMockSocket());
+      if (invalidJoin.success || invalidJoin.errorCode !== 'ROOM_NOT_FOUND') {
+        throw new Error('Expected ROOM_NOT_FOUND error code for non-existent room');
+      }
+    }
+  );
+
   return harness;
 }
