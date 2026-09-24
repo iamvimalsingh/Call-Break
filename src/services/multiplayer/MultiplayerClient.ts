@@ -967,7 +967,6 @@ export class MultiplayerClient {
           }
           this.hasSynchronizedState = true;
           this.evaluateOnlineState();
-          this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
           this.gameStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 

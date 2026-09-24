@@ -192,9 +192,6 @@ export const GameShell: React.FC = () => {
         setTurnTimer(null);
       } else {
         setTurnTimer(payload);
-        if (payload.isExtraTime && payload.remainingSec <= 5 && !isMuted) {
-          soundManager.play('tick');
-        }
       }
     });
 

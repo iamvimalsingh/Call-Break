@@ -472,5 +472,68 @@ export function buildConnectionReliabilityTestSuite(): TestHarness {
     }
   );
 
+  // 15. MATCH_SYNC does not fire gameStartedListeners, while GAME_STARTED does
+  harness.register(
+    category,
+    'MATCH_SYNC must not fire gameStartedListeners, while GAME_STARTED does',
+    () => {
+      setupMockEnvironment();
+
+      const client = new MultiplayerClient();
+      const startedEvents: string[] = [];
+      const stateEvents: any[] = [];
+
+      client.onGameStarted((roomCode) => {
+        startedEvents.push(roomCode);
+      });
+
+      client.onGameState((payload) => {
+        stateEvents.push(payload);
+      });
+
+      // Directly invoke handleMessage with a MATCH_SYNC packet
+      const matchSyncMessage = {
+        type: 'MATCH_SYNC',
+        payload: {
+          roomCode: 'SYNC01',
+          rawPosition: 'SOUTH',
+          state: {
+            round: 1,
+            currentPlayer: 'SOUTH',
+            players: {},
+          },
+        },
+      };
+
+      const getStartedCount = (): number => startedEvents.length;
+      const getStateCount = (): number => stateEvents.length;
+
+      (client as any).handleServerMessage(JSON.stringify(matchSyncMessage));
+
+      if (getStartedCount() !== 0) {
+        throw new Error(`MATCH_SYNC incorrectly invoked gameStartedListeners ${getStartedCount()} times (expected 0)`);
+      }
+      if (getStateCount() !== 1) {
+        throw new Error(`MATCH_SYNC failed to invoke gameStateListeners (expected 1, got ${getStateCount()})`);
+      }
+
+      // Now invoke with genuine GAME_STARTED packet
+      const gameStartedMessage = {
+        type: 'GAME_STARTED',
+        payload: {
+          roomCode: 'SYNC01',
+        },
+      };
+
+      (client as any).handleServerMessage(JSON.stringify(gameStartedMessage));
+
+      if (getStartedCount() !== 1) {
+        throw new Error(`GAME_STARTED failed to invoke gameStartedListeners (expected 1, got ${getStartedCount()})`);
+      }
+
+      client.cleanup();
+    }
+  );
+
   return harness;
 }
