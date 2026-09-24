@@ -182,7 +182,7 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
             <span>Create New Table</span>
           </button>
 
-          {/* 2. Join Existing Table Action */}
+          {/* 2. Join a Table Action */}
           <button
             type="button"
             id="btn-lobby-join-table"
@@ -194,7 +194,7 @@ export const HomeLobbyModal: React.FC<HomeLobbyModalProps> = ({
             className="w-full py-3 px-4 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:from-amber-700 text-stone-950 shadow-md shadow-amber-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           >
             <LogIn className="w-4 h-4 text-stone-950" />
-            <span>Join Existing Table</span>
+            <span>Join a Table</span>
           </button>
 
           {/* Tutorial Button */}

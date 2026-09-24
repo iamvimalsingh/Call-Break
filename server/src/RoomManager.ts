@@ -152,6 +152,8 @@ export class GameRoom {
   private unsubscribeRebid: (() => void) | null = null;
   private unsubscribeTimeoutTakeover: (() => void) | null = null;
   private readyFallbackTimer: NodeJS.Timeout | null = null;
+  private finishedCleanupTimer: NodeJS.Timeout | null = null;
+  private isDestroyed: boolean = false;
 
   constructor(roomCode: string, hostClientId: string, hostName: string, hostSocket: WebSocket) {
     this.roomCode = normalizeRoomCode(roomCode);
@@ -216,6 +218,10 @@ export class GameRoom {
     });
   }
 
+  public getStatus(): 'LOBBY' | 'PLAYING' | 'FINISHED' {
+    return this.status;
+  }
+
   public getPlayerCount(): number {
     return Array.from(this.players.values()).filter((p) => !p.isBot).length;
   }
@@ -230,6 +236,36 @@ export class GameRoom {
 
   public getClientPosition(clientId: string): PlayerPosition | undefined {
     return this.clientPositions.get(clientId);
+  }
+
+  public getParticipant(position: PlayerPosition): RoomParticipant | undefined {
+    return this.players.get(position);
+  }
+
+  public getParticipants(): RoomParticipant[] {
+    return Array.from(this.players.values());
+  }
+
+  public getController(): AuthoritativeGameController | null {
+    return this.controller;
+  }
+
+  public getSeatReservation(position: PlayerPosition): { hasReservation: boolean; remainingMs: number | null } {
+    const now = Date.now();
+    for (const info of this.disconnectedSeats.values()) {
+      if (info.position === position && now - info.disconnectedAt <= 45000) {
+        return {
+          hasReservation: true,
+          remainingMs: Math.max(0, 45000 - (now - info.disconnectedAt)),
+        };
+      }
+    }
+    return { hasReservation: false, remainingMs: null };
+  }
+
+  public isSocketOpen(clientId: string): boolean {
+    const ws = this.clientSockets.get(clientId);
+    return ws ? ws.readyState === WebSocket.OPEN : false;
   }
 
   public addPlayer(
@@ -787,6 +823,11 @@ export class GameRoom {
 
     if (this.status === 'LOBBY') {
       this.broadcastRoomState();
+    } else if (this.status === 'FINISHED') {
+      this.broadcastRoomState();
+      if (this.getConnectedClientCount() === 0) {
+        RoomManager.getInstance().cleanupRoom(this.roomCode);
+      }
     } else if (this.status === 'PLAYING') {
       // Clear any previous reservations for this seat
       this.clearSeatReservation(pos);
@@ -1305,6 +1346,7 @@ export class GameRoom {
       if (event.type === 'MATCH_COMPLETED') {
         this.status = 'FINISHED';
         this.broadcastRoomState();
+        this.scheduleFinishedCleanup();
       }
     });
 
@@ -1368,10 +1410,49 @@ export class GameRoom {
     return { success: true };
   }
 
-  public handleClientReady(_clientId: string): void {
+  public getRoomStatePayload(clientId: string): RoomState {
+    const playerList = Array.from(this.players.values());
+    const assignedPos = this.clientPositions.get(clientId);
+    return {
+      roomCode: this.roomCode,
+      hostId: this.hostClientId,
+      status: this.status,
+      players: playerList,
+      assignedPosition: assignedPos,
+      myClientId: clientId,
+      autoFillBots: this.autoFillBots,
+      totalRounds: this.totalRounds,
+    };
+  }
+
+  public handleClientReady(clientId: string): void {
     if (this.readyFallbackTimer) {
       clearTimeout(this.readyFallbackTimer);
       this.readyFallbackTimer = null;
+    }
+    const pos = this.clientPositions.get(clientId);
+    const socket = this.clientSockets.get(clientId);
+    if (socket && (socket.readyState === 1 || (socket as any).readyState === WebSocket.OPEN)) {
+      if (pos && this.controller && (this.status === 'PLAYING' || this.status === 'FINISHED')) {
+        const perspectiveState = this.controller.getPerspectiveState(pos);
+        const syncMsg: ServerMessage = {
+          type: 'MATCH_SYNC',
+          payload: {
+            roomCode: this.roomCode,
+            state: perspectiveState,
+            myPosition: PlayerPosition.SOUTH,
+            rawPosition: pos,
+          },
+        };
+        socket.send(JSON.stringify(syncMsg));
+      } else {
+        socket.send(
+          JSON.stringify({
+            type: 'ROOM_STATE',
+            payload: this.getRoomStatePayload(clientId),
+          })
+        );
+      }
     }
     if (this.status === 'PLAYING' && this.controller) {
       this.controller.startTurnProgression();
@@ -1502,27 +1583,12 @@ export class GameRoom {
   }
 
   public broadcastRoomState(): void {
-    const playerList = Array.from(this.players.values());
-
     for (const [clientId, socket] of this.clientSockets) {
       if (socket.readyState === WebSocket.OPEN) {
-        const assignedPos = this.clientPositions.get(clientId);
-        const roomStatePayload: RoomState = {
-          roomCode: this.roomCode,
-          hostId: this.hostClientId,
-          status: this.status,
-          players: playerList,
-          assignedPosition: assignedPos,
-          myClientId: clientId,
-          autoFillBots: this.autoFillBots,
-          totalRounds: this.totalRounds,
-        };
-
         const msg: ServerMessage = {
           type: 'ROOM_STATE',
-          payload: roomStatePayload,
+          payload: this.getRoomStatePayload(clientId),
         };
-
         socket.send(JSON.stringify(msg));
       }
     }
@@ -1583,7 +1649,29 @@ export class GameRoom {
     }
   }
 
+  public scheduleFinishedCleanup(): void {
+    if (this.finishedCleanupTimer) {
+      clearTimeout(this.finishedCleanupTimer);
+      this.finishedCleanupTimer = null;
+    }
+    if (this.getConnectedClientCount() === 0) {
+      RoomManager.getInstance().cleanupRoom(this.roomCode);
+      return;
+    }
+    this.finishedCleanupTimer = setTimeout(() => {
+      this.finishedCleanupTimer = null;
+      RoomManager.getInstance().cleanupRoom(this.roomCode);
+    }, 90000);
+  }
+
   public destroy(): void {
+    if (this.isDestroyed) return;
+    this.isDestroyed = true;
+
+    if (this.finishedCleanupTimer) {
+      clearTimeout(this.finishedCleanupTimer);
+      this.finishedCleanupTimer = null;
+    }
     for (const info of Array.from(this.disconnectedSeats.values())) {
       if (info.reservationTimeout) {
         clearTimeout(info.reservationTimeout);
@@ -1607,7 +1695,15 @@ export class GameRoom {
   }
 
   public getPublicSummary(): ActiveTableSummary | null {
-    if (this.status === 'FINISHED') return null;
+    if (this.status === 'FINISHED' || this.isDestroyed) return null;
+
+    const connectedHumanCount = this.getConnectedClientCount();
+    const hasReservations = this.hasActiveReservations();
+
+    // Must be associated with at least one live human or valid active reservation
+    if (connectedHumanCount === 0 && !hasReservations) {
+      return null;
+    }
 
     const playersList = Array.from(this.players.values());
     const humanCount = playersList.filter((p) => !p.isBot).length;
@@ -1615,6 +1711,9 @@ export class GameRoom {
 
     // Full 4-human tables cannot accept new humans
     if (humanCount >= 4) return null;
+
+    // If PLAYING and no bots are available to takeover, cannot accept new humans
+    if (this.status === 'PLAYING' && botCount === 0) return null;
 
     const hostParticipant =
       playersList.find((p) => p.id === this.hostClientId && !p.isBot) ||
@@ -1627,7 +1726,7 @@ export class GameRoom {
       return {
         roomCode: this.roomCode,
         hostName,
-        humanCount,
+        humanCount: Math.max(connectedHumanCount, humanCount),
         totalSeats: 4,
         status: 'WAITING',
         currentRound: 1,
@@ -1637,12 +1736,11 @@ export class GameRoom {
     }
 
     if (this.status === 'PLAYING') {
-      if (botCount === 0) return null;
       const currentRound = this.controller ? this.controller.getState().currentRound : 1;
       return {
         roomCode: this.roomCode,
         hostName,
-        humanCount,
+        humanCount: Math.max(connectedHumanCount, humanCount),
         totalSeats: 4,
         status: 'PLAYING',
         currentRound,
@@ -1777,22 +1875,41 @@ export class RoomManager {
     const room = this.rooms.get(roomCode);
     if (room) {
       room.removeClient(clientId, isExplicit);
-      if (room.getConnectedClientCount() === 0 && !room.hasActiveReservations()) {
-        room.destroy();
-        this.rooms.delete(roomCode);
-      }
+      this.cleanupRoomIfEmpty(roomCode);
     }
     if (isExplicit) {
       this.clientRoomMap.delete(clientId);
     }
   }
 
+  public cleanupRoom(roomCode: string): void {
+    const cleanCode = normalizeRoomCode(roomCode);
+    const room = this.rooms.get(cleanCode);
+    if (room) {
+      room.destroy();
+      this.rooms.delete(cleanCode);
+      for (const [clientId, rCode] of Array.from(this.clientRoomMap.entries())) {
+        if (rCode === cleanCode) {
+          this.clientRoomMap.delete(clientId);
+        }
+      }
+    }
+  }
+
   public cleanupRoomIfEmpty(roomCode: string): void {
     const cleanCode = normalizeRoomCode(roomCode);
     const room = this.rooms.get(cleanCode);
-    if (room && room.getConnectedClientCount() === 0 && !room.hasActiveReservations()) {
-      room.destroy();
-      this.rooms.delete(cleanCode);
+    if (!room) return;
+
+    if (room.getStatus() === 'FINISHED') {
+      if (room.getConnectedClientCount() === 0) {
+        this.cleanupRoom(cleanCode);
+      }
+      return;
+    }
+
+    if (room.getConnectedClientCount() === 0 && !room.hasActiveReservations()) {
+      this.cleanupRoom(cleanCode);
     }
   }
 
@@ -1812,12 +1929,30 @@ export class RoomManager {
 
   public getActiveRoomsSummary(): ActiveTableSummary[] {
     const summaries: ActiveTableSummary[] = [];
-    for (const room of this.rooms.values()) {
+    const deadRoomCodes: string[] = [];
+
+    for (const [code, room] of this.rooms.entries()) {
+      if (
+        (room.getStatus() === 'FINISHED' && room.getConnectedClientCount() === 0) ||
+        (room.getConnectedClientCount() === 0 && !room.hasActiveReservations())
+      ) {
+        deadRoomCodes.push(code);
+        continue;
+      }
       const summary = room.getPublicSummary();
       if (summary) {
         summaries.push(summary);
       }
     }
+
+    for (const deadCode of deadRoomCodes) {
+      this.cleanupRoom(deadCode);
+    }
+
     return summaries;
+  }
+
+  public getAllRooms(): GameRoom[] {
+    return Array.from(this.rooms.values());
   }
 }

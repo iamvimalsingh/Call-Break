@@ -44,7 +44,7 @@ export const GameShell: React.FC = () => {
   const [isScoreboardOpen, setIsScoreboardOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isRulesOpen, setIsRulesOpen] = useState(false);
-  const [isHomeOpen, setIsHomeOpen] = useState(() => !getActiveTableId() && sharedGameStore.getState().status === GameStatus.IDLE);
+  const [isHomeOpen, setIsHomeOpen] = useState(() => sharedGameStore.getState().status === GameStatus.IDLE);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isStatisticsOpen, setIsStatisticsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -175,6 +175,8 @@ export const GameShell: React.FC = () => {
         err.code === 'TABLE_NOT_ACTIVE' ||
         err.message?.toLowerCase().includes('no active table')
       ) {
+        setRoomCode(null);
+        setRoomState(null);
         setIsHomeOpen(true);
         setIsRoomLobbyOpen(false);
         setToast({
@@ -494,12 +496,14 @@ export const GameShell: React.FC = () => {
 
   const isWaitingTable =
     Boolean(roomCode) &&
-    (roomState?.status === 'LOBBY' ||
-      (gameState.status === GameStatus.IDLE && roomState?.status !== 'PLAYING'));
+    Boolean(roomState) &&
+    roomState?.status === 'LOBBY';
 
   const isActiveMatch =
-    (gameState.status !== GameStatus.IDLE && gameState.status !== GameStatus.MATCH_FINISHED) ||
-    (Boolean(roomCode) && roomState?.status === 'PLAYING' && gameState.status !== GameStatus.MATCH_FINISHED);
+    Boolean(roomCode) &&
+    Boolean(roomState) &&
+    roomState?.status === 'PLAYING' &&
+    gameState.status !== GameStatus.MATCH_FINISHED;
 
   const handleStartMatchFromLobbyOrMenu = useCallback(() => {
     const currentRoom = sharedMultiplayerClient.getRoomState();

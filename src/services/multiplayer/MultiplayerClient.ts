@@ -44,6 +44,21 @@ export type PlayerDisconnectedListener = (data: {
 export type JoinRequestListener = (payload: JoinRequestPayload) => void;
 export type JoinRequestStatusListener = (payload: JoinRequestStatusPayload) => void;
 
+export type DetailedConnectionState =
+  | 'DISCONNECTED'
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'RECONNECTING'
+  | 'SYNCING'
+  | 'ONLINE'
+  | 'STALE';
+
+export type ConnectionDotStatus = 'green' | 'yellow' | 'red';
+export type ConnectionDotListener = (
+  status: ConnectionDotStatus,
+  detailed: DetailedConnectionState
+) => void;
+
 const PLAYER_ID_STORAGE_KEY = 'cb_player_id';
 const PLAYER_NAME_STORAGE_KEY = 'cb_player_name';
 const ACTIVE_TABLE_STORAGE_KEY = 'cb_active_table_id';
@@ -287,6 +302,27 @@ export class MultiplayerClient {
   private isManualDisconnect: boolean = false;
   private keepaliveTimer: any = null;
 
+  // Step 2: Advanced Connection State Machine & Zombie Socket Watchdog
+  private detailedState: DetailedConnectionState = 'DISCONNECTED';
+  private dotStatus: ConnectionDotStatus = 'yellow';
+  private dotStatusListeners: Set<ConnectionDotListener> = new Set();
+
+  private lastMessageTime: number = 0;
+  private watchdogTimer: any = null;
+  private isRecovering: boolean = false;
+  private lastRecoveryTime: number = 0;
+  private hasSynchronizedState: boolean = false;
+
+  public static readonly STALE_HEARTBEAT_THRESHOLD_MS = 25000;
+  public static readonly WATCHDOG_CHECK_INTERVAL_MS = 3000;
+  public static readonly MAX_RECONNECT_ATTEMPTS = 5;
+  public static readonly RELOAD_RECOVERY_STORAGE_KEY = 'cb_reload_recovery_attempt';
+
+  private boundVisibilityChange: (() => void) | null = null;
+  private boundPageShow: (() => void) | null = null;
+  private boundOnline: (() => void) | null = null;
+  private boundFocus: (() => void) | null = null;
+
   private roomStateListeners: Set<RoomStateListener> = new Set();
   private gameStateListeners: Set<GameStateListener> = new Set();
   private gameEventListeners: Set<GameEventListener> = new Set();
@@ -299,6 +335,12 @@ export class MultiplayerClient {
   private joinRequestListeners: Set<JoinRequestListener> = new Set();
   private joinRequestStatusListeners: Set<JoinRequestStatusListener> = new Set();
   private activeRoomsListListeners: Set<ActiveRoomsListListener> = new Set();
+
+  constructor() {
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      this.setupLifecycleListeners();
+    }
+  }
 
   public static getInstance(): MultiplayerClient {
     if (!MultiplayerClient.instance) {
@@ -337,6 +379,324 @@ export class MultiplayerClient {
     this.connectionStateListeners.add(listener);
     listener(this.getConnectionState(), this.connectionError);
     return () => this.connectionStateListeners.delete(listener);
+  }
+
+  public getDetailedConnectionState(): DetailedConnectionState {
+    return this.detailedState;
+  }
+
+  public getConnectionDotStatus(): ConnectionDotStatus {
+    return this.dotStatus;
+  }
+
+  public onConnectionDotStatus(listener: ConnectionDotListener): () => void {
+    this.dotStatusListeners.add(listener);
+    listener(this.dotStatus, this.detailedState);
+    return () => this.dotStatusListeners.delete(listener);
+  }
+
+  public setDetailedState(state: DetailedConnectionState): void {
+    if (this.detailedState === state) return;
+    this.detailedState = state;
+    this.updateDotStatus();
+  }
+
+  public setHasSynchronizedState(synced: boolean): void {
+    this.hasSynchronizedState = synced;
+    this.evaluateOnlineState();
+  }
+
+  public setLastMessageTime(time: number): void {
+    this.lastMessageTime = time;
+  }
+
+  public getLastMessageTime(): number {
+    return this.lastMessageTime;
+  }
+
+  public getReconnectAttempts(): number {
+    return this.reconnectAttempts;
+  }
+
+  public setReconnectAttempts(attempts: number): void {
+    this.reconnectAttempts = attempts;
+    this.updateDotStatus();
+  }
+
+  private updateDotStatus(): void {
+    let newDot: ConnectionDotStatus;
+
+    if (this.detailedState === 'ONLINE') {
+      newDot = 'green';
+    } else if (
+      this.detailedState === 'CONNECTING' ||
+      this.detailedState === 'CONNECTED' ||
+      this.detailedState === 'RECONNECTING' ||
+      this.detailedState === 'SYNCING' ||
+      this.detailedState === 'STALE'
+    ) {
+      newDot = 'yellow';
+    } else {
+      // DISCONNECTED
+      newDot = this.reconnectAttempts >= MultiplayerClient.MAX_RECONNECT_ATTEMPTS ? 'red' : 'yellow';
+    }
+
+    if (this.dotStatus !== newDot) {
+      this.dotStatus = newDot;
+      this.dotStatusListeners.forEach((fn) => {
+        try {
+          fn(this.dotStatus, this.detailedState);
+        } catch (err) {
+          console.warn('[MultiplayerClient] Trapped dotStatus listener error:', err);
+        }
+      });
+    }
+  }
+
+  public evaluateOnlineState(): void {
+    const isSocketHealthy =
+      this.isConnected() &&
+      (Date.now() - this.lastMessageTime < MultiplayerClient.STALE_HEARTBEAT_THRESHOLD_MS ||
+        this.lastMessageTime === 0);
+
+    if (!isSocketHealthy) {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.setDetailedState('STALE');
+      } else {
+        this.setDetailedState(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
+      }
+      return;
+    }
+
+    const inActiveRoom = Boolean(this.currentRoomState?.roomCode || getActiveTableId());
+
+    if (inActiveRoom) {
+      if (this.hasSynchronizedState) {
+        this.setDetailedState('ONLINE');
+        this.clearReloadRecoveryFlag();
+      } else {
+        this.setDetailedState('SYNCING');
+      }
+    } else {
+      // In lobby, connected and heartbeat valid is ONLINE
+      this.setDetailedState('ONLINE');
+      this.clearReloadRecoveryFlag();
+    }
+  }
+
+  private clearReloadRecoveryFlag(): void {
+    if (typeof window !== 'undefined' && typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.removeItem(MultiplayerClient.RELOAD_RECOVERY_STORAGE_KEY);
+      } catch {}
+    }
+  }
+
+  public startWatchdog(): void {
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(() => {
+      this.checkWatchdog();
+    }, MultiplayerClient.WATCHDOG_CHECK_INTERVAL_MS);
+  }
+
+  public stopWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  public checkWatchdog(): void {
+    const isPageVisible =
+      typeof document === 'undefined' || document.visibilityState === 'visible';
+    if (!isPageVisible) return;
+
+    if (this.isConnected() && this.socket && this.lastMessageTime > 0) {
+      const elapsed = Date.now() - this.lastMessageTime;
+      if (elapsed >= MultiplayerClient.STALE_HEARTBEAT_THRESHOLD_MS) {
+        console.warn(
+          `[WebSocket Watchdog] Stale connection detected (${elapsed}ms without server message). Terminating socket for recovery.`
+        );
+        this.setDetailedState('STALE');
+        try {
+          this.socket.close(4001, 'Watchdog stale heartbeat');
+        } catch {}
+        this.socket = null;
+        this.triggerReconnect();
+      }
+    }
+  }
+
+  public setupLifecycleListeners(): void {
+    this.removeLifecycleListeners();
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    this.boundVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        this.triggerLifecycleRecovery('visibilitychange');
+      }
+    };
+
+    this.boundPageShow = () => {
+      this.triggerLifecycleRecovery('pageshow');
+    };
+
+    this.boundOnline = () => {
+      this.triggerLifecycleRecovery('online');
+    };
+
+    this.boundFocus = () => {
+      this.triggerLifecycleRecovery('focus');
+    };
+
+    document.addEventListener('visibilitychange', this.boundVisibilityChange);
+    window.addEventListener('pageshow', this.boundPageShow);
+    window.addEventListener('online', this.boundOnline);
+    window.addEventListener('focus', this.boundFocus);
+  }
+
+  public removeLifecycleListeners(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (this.boundVisibilityChange) {
+      document.removeEventListener('visibilitychange', this.boundVisibilityChange);
+      this.boundVisibilityChange = null;
+    }
+    if (this.boundPageShow) {
+      window.removeEventListener('pageshow', this.boundPageShow);
+      this.boundPageShow = null;
+    }
+    if (this.boundOnline) {
+      window.removeEventListener('online', this.boundOnline);
+      this.boundOnline = null;
+    }
+    if (this.boundFocus) {
+      window.removeEventListener('focus', this.boundFocus);
+      this.boundFocus = null;
+    }
+  }
+
+  public triggerLifecycleRecovery(source: string): void {
+    const now = Date.now();
+    if (this.isRecovering || now - this.lastRecoveryTime < 600) {
+      return;
+    }
+    this.lastRecoveryTime = now;
+    this.isRecovering = true;
+
+    try {
+      console.log(`[MultiplayerClient] Lifecycle event: ${source}. Evaluating connection freshness...`);
+
+      const inActiveRoom = Boolean(this.currentRoomState?.roomCode || getActiveTableId());
+
+      // STEP A: Immediately mark state YELLOW if inside live table or connection check is required
+      if (inActiveRoom) {
+        this.hasSynchronizedState = false;
+        this.setDetailedState('SYNCING');
+      }
+
+      // STEP B: Check actual socket health
+      if (
+        !this.socket ||
+        this.socket.readyState === WebSocket.CLOSED ||
+        this.socket.readyState === WebSocket.CLOSING
+      ) {
+        console.log(`[MultiplayerClient] Socket closed/closing on ${source}. Reconnecting...`);
+        this.setDetailedState(this.reconnectAttempts > 0 ? 'RECONNECTING' : 'CONNECTING');
+        this.connect().catch(() => {});
+        return;
+      }
+
+      if (this.socket.readyState === WebSocket.CONNECTING) {
+        this.setDetailedState('CONNECTING');
+        return;
+      }
+
+      if (this.socket.readyState === WebSocket.OPEN) {
+        // Do not automatically trust OPEN socket: verify heartbeat freshness
+        const timeSinceLastMsg = this.lastMessageTime > 0 ? now - this.lastMessageTime : 0;
+        if (timeSinceLastMsg >= MultiplayerClient.STALE_HEARTBEAT_THRESHOLD_MS) {
+          console.warn(
+            `[MultiplayerClient] Socket open but stale (${timeSinceLastMsg}ms on ${source}). Terminating and reconnecting...`
+          );
+          this.setDetailedState('STALE');
+          try {
+            this.socket.close(4001, 'Stale socket on foreground return');
+          } catch {}
+          this.socket = null;
+          this.triggerReconnect();
+          return;
+        }
+
+        // STEP C: Socket is healthy! Request authoritative current room state using existing CLIENT_READY
+        if (inActiveRoom) {
+          console.log(
+            `[MultiplayerClient] Socket healthy on ${source}. Requesting authoritative state sync via CLIENT_READY...`
+          );
+          this.sendClientReady();
+        } else {
+          this.evaluateOnlineState();
+        }
+      }
+    } finally {
+      this.isRecovering = false;
+    }
+  }
+
+  public triggerReconnect(): void {
+    if (this.isManualDisconnect) return;
+
+    if (this.reconnectAttempts >= MultiplayerClient.MAX_RECONNECT_ATTEMPTS) {
+      console.warn(
+        `[MultiplayerClient] Reconnect failed ${this.reconnectAttempts} times. Marking DISCONNECTED (RED).`
+      );
+      this.setDetailedState('DISCONNECTED');
+      this.updateDotStatus(); // Sets dotStatus = 'red'
+
+      // Check for last-resort controlled page reload
+      const activeTable = getActiveTableId();
+      if (typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && activeTable) {
+        try {
+          const alreadyAttempted = sessionStorage.getItem(
+            MultiplayerClient.RELOAD_RECOVERY_STORAGE_KEY
+          );
+          if (!alreadyAttempted) {
+            console.warn(
+              '[MultiplayerClient] Triggering one-time controlled page reload recovery...'
+            );
+            sessionStorage.setItem(MultiplayerClient.RELOAD_RECOVERY_STORAGE_KEY, '1');
+            window.location.reload();
+            return;
+          } else {
+            console.warn(
+              '[MultiplayerClient] Controlled reload already attempted. Remaining RED and awaiting network/lifecycle event.'
+            );
+          }
+        } catch {
+          // ignore sessionStorage error
+        }
+      }
+      return;
+    }
+
+    this.setDetailedState('RECONNECTING');
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
+    this.reconnectAttempts++;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.connect().catch(() => {});
+    }, delay);
+  }
+
+  public cleanup(): void {
+    this.stopKeepalive();
+    this.stopWatchdog();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.removeLifecycleListeners();
   }
 
   private setConnectionState(state: ConnectionState, error: string | null = null): void {
@@ -426,7 +786,9 @@ export class MultiplayerClient {
           console.log(`[WebSocket] onopen: Connected successfully to ${wsUrl}`, event);
           this.socket = ws;
           this.reconnectAttempts = 0;
+          this.lastMessageTime = Date.now();
           this.startKeepalive();
+          this.startWatchdog();
 
           // Flush pending queue
           while (this.pendingQueue.length > 0) {
@@ -439,6 +801,7 @@ export class MultiplayerClient {
           if (activeTable) {
             const storedName = getStoredPlayerName() || 'Player';
             console.log(`[WebSocket] Attempting to auto-resume active table session: ${activeTable}`);
+            this.setDetailedState('SYNCING');
             this.send({
               type: 'JOIN_ROOM',
               payload: {
@@ -447,6 +810,8 @@ export class MultiplayerClient {
                 playerName: storedName,
               },
             });
+          } else {
+            this.setDetailedState('ONLINE');
           }
 
           finish('OPEN');
@@ -460,6 +825,8 @@ export class MultiplayerClient {
           const errMsg = `WebSocket connection warning on ${wsUrl}`;
           console.warn('[WebSocket] onerror (handled gracefully):', errMsg, err);
           this.stopKeepalive();
+          this.stopWatchdog();
+          this.hasSynchronizedState = false;
           finish('CLOSED', errMsg);
         };
 
@@ -471,15 +838,13 @@ export class MultiplayerClient {
               : `Server connection closed (code: ${event.code})`);
           console.warn(`[WebSocket] onclose: code=${event.code}, reason=${reason}`);
           this.stopKeepalive();
+          this.stopWatchdog();
+          this.hasSynchronizedState = false;
           finish('CLOSED', reason);
 
           // Automatic reconnect with backoff when disconnected unexpectedly
           if (!this.isManualDisconnect) {
-            const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 8000);
-            this.reconnectAttempts++;
-            this.reconnectTimer = setTimeout(() => {
-              this.connect().catch(() => {});
-            }, delay);
+            this.triggerReconnect();
           }
         };
       } catch (err: any) {
@@ -492,7 +857,9 @@ export class MultiplayerClient {
   public disconnect(): void {
     this.isManualDisconnect = true;
     this.reconnectAttempts = 0;
+    this.hasSynchronizedState = false;
     this.stopKeepalive();
+    this.stopWatchdog();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -508,6 +875,7 @@ export class MultiplayerClient {
     }
     this.currentRoomState = null;
     this.setConnectionState('CLOSED', null);
+    this.setDetailedState('DISCONNECTED');
   }
 
   private startKeepalive(): void {
@@ -549,6 +917,7 @@ export class MultiplayerClient {
 
   private handleServerMessage(data: string | ArrayBuffer): void {
     try {
+      this.lastMessageTime = Date.now();
       const msg = JSON.parse(
         typeof data === 'string' ? data : new TextDecoder().decode(data)
       ) as ServerMessage;
@@ -570,6 +939,8 @@ export class MultiplayerClient {
           if (msg.payload?.assignedPosition) {
             setConfirmedSeat(msg.payload.assignedPosition);
           }
+          this.hasSynchronizedState = true;
+          this.evaluateOnlineState();
           this.roomStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
@@ -582,6 +953,8 @@ export class MultiplayerClient {
           if (msg.payload?.roomCode) {
             setActiveTableId(msg.payload.roomCode);
           }
+          this.hasSynchronizedState = true;
+          this.evaluateOnlineState();
           this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
           break;
 
@@ -592,11 +965,15 @@ export class MultiplayerClient {
           if (msg.payload?.rawPosition) {
             setConfirmedSeat(msg.payload.rawPosition);
           }
+          this.hasSynchronizedState = true;
+          this.evaluateOnlineState();
           this.gameStartedListeners.forEach((fn) => safeCall(fn, msg.payload.roomCode));
           this.gameStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
         case 'GAME_STATE':
+          this.hasSynchronizedState = true;
+          this.evaluateOnlineState();
           this.gameStateListeners.forEach((fn) => safeCall(fn, msg.payload));
           break;
 
@@ -642,6 +1019,7 @@ export class MultiplayerClient {
           break;
 
         case 'PONG':
+          this.evaluateOnlineState();
           break;
       }
     } catch (err) {

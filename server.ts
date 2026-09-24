@@ -9,11 +9,15 @@ import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { setupWebSocketServer } from "./server/src/index";
+import { createAdminRouter } from "./server/src/adminRouter";
 
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
-  const PORT = 3000;
+  // In development, dev server MUST run on 3000 (reverse-proxied by nginx).
+  // In production (e.g. Cloud Run), listen on process.env.PORT (typically 8080) as provided by Cloud Run container runtime.
+  const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.K_SERVICE);
+  const PORT = isProduction ? (Number(process.env.PORT) || 8080) : 3000;
 
   app.use(express.json());
 
@@ -28,7 +32,10 @@ async function startServer() {
   });
 
   // Attach WebSocket server on /ws
-  setupWebSocketServer(server);
+  const wss = setupWebSocketServer(server);
+
+  // Authenticated Admin REST inspection endpoints
+  app.use("/api/admin", createAdminRouter({ getActiveConnectionsCount: () => wss.clients.size }));
 
   // Vite middleware for development vs static dist for production
   if (process.env.NODE_ENV !== "production") {

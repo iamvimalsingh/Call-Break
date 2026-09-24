@@ -266,6 +266,7 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
 
   if (!isOpen) return null;
 
+  const invitedRoomCode = (initialRoomCode || prefilledRoomCode || '').trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   const currentUrl = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://callbreak.app';
   const joinLink = `${currentUrl}?room=${roomCode}`;
   const inviteMessage = `Let's play Call Break together! Tap the link to join my table: ${joinLink} (Room ID: ${roomCode})`;
@@ -1152,12 +1153,12 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
             </div>
           )}
 
-          {/* Tab Content: JOIN ROOM FORM */}
+          {/* Tab Content: JOIN A TABLE (Direct Active Tables discovery) */}
           {activeTab === 'join' && !hasJoinedRoom && (
-            <form onSubmit={handleJoinSubmit} className="space-y-4">
+            <div className="space-y-4">
               <div className="p-4 rounded-2xl bg-stone-950/80 border border-stone-800 space-y-3">
                 {/* Player Name / Nickname Input for Joiner */}
-                <div className="space-y-1.5 pb-2 border-b border-stone-800">
+                <div className="space-y-1.5">
                   <label htmlFor="input-joiner-name" className="block text-xs font-semibold text-stone-300">
                     Your Name / Nickname <span className="text-amber-400 font-semibold">*</span>:
                   </label>
@@ -1170,37 +1171,6 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     maxLength={18}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-700 text-white text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-500"
                   />
-                </div>
-
-                <label htmlFor="input-room-code" className="block text-xs font-semibold text-stone-300">
-                  Enter Room ID:
-                </label>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    id="input-room-code"
-                    value={joinInputCode}
-                    onChange={(e) => {
-                      setJoinInputCode(e.target.value.toUpperCase());
-                      setJoinError(null);
-                    }}
-                    placeholder="e.g. VIMAL or 742918"
-                    maxLength={10}
-                    className="flex-1 px-4 py-3 rounded-xl bg-stone-900 border border-stone-700 text-white font-mono text-xl sm:text-2xl font-bold tracking-widest text-center focus:outline-hidden focus:ring-2 focus:ring-amber-400/60 focus:border-amber-400 placeholder:text-stone-600 uppercase"
-                    autoFocus
-                  />
-
-                  <button
-                    type="button"
-                    id="btn-paste-room-code"
-                    onClick={handlePasteCode}
-                    className="px-3.5 py-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 flex items-center gap-1.5 text-xs font-medium cursor-pointer transition-colors shrink-0"
-                    title="Paste from clipboard"
-                  >
-                    <ClipboardPaste className="w-4 h-4 text-amber-400" />
-                    <span className="hidden xs:inline">Paste</span>
-                  </button>
                 </div>
 
                 {pendingApprovalMsg && (
@@ -1219,150 +1189,155 @@ export const RoomLobbyModal: React.FC<RoomLobbyModalProps> = ({
                     <span>{joinError}</span>
                   </p>
                 )}
-
-                <p className="text-[11px] text-stone-400 font-sans">
-                  Ask your friend who created the room to share their Room ID or WhatsApp invite link.
-                </p>
               </div>
 
-              {/* Submit Join */}
-              <button
-                type="submit"
-                id="btn-submit-join-room"
-                disabled={isJoining || connectionState !== 'OPEN'}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 active:from-amber-700 text-stone-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-950/60 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isJoining ? (
-                  <>
-                    <Loader2 className="w-4 h-4 text-stone-950 animate-spin" />
-                    <span>Connecting to Table...</span>
-                  </>
-                ) : (
-                  <>
-                    <LogIn className="w-4 h-4 text-stone-950" />
-                    <span>Join Friend's Table</span>
-                  </>
-                )}
-              </button>
-
-              {/* Active Tables Discovery Section */}
-              <div className="pt-2 border-t border-stone-800/80 space-y-2.5">
-                <div className="flex items-center justify-between">
+              {/* Deep-link / Invite Link Card if opened with ?room= or ?r= */}
+              {invitedRoomCode && (
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-950/60 to-amber-900/30 border border-amber-500/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold font-mono uppercase bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                      ★ Invited Table
+                    </span>
+                    <span className="text-xs font-mono font-bold text-amber-300 tracking-wider">
+                      {invitedRoomCode}
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-300">
+                    You were invited to table <span className="font-mono font-bold text-amber-300">{invitedRoomCode}</span>.
+                  </p>
                   <button
                     type="button"
-                    id="btn-see-active-tables"
-                    onClick={handleToggleActiveTables}
-                    className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1.5 cursor-pointer transition-colors py-1"
+                    id="btn-join-invited-table"
+                    disabled={isJoining || connectionState !== 'OPEN'}
+                    onClick={() => handleSelectActiveTable(invitedRoomCode)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-stone-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-amber-950/40 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Users className="w-3.5 h-3.5 text-amber-400" />
-                    <span>{showActiveTables ? 'Hide Active Tables' : 'See Active Tables'}</span>
+                    {isJoining ? (
+                      <>
+                        <Loader2 className="w-4 h-4 text-stone-950 animate-spin" />
+                        <span>Joining Invited Table...</span>
+                      </>
+                    ) : (
+                      <>
+                        <LogIn className="w-4 h-4 text-stone-950" />
+                        <span>Join Invited Table</span>
+                      </>
+                    )}
                   </button>
+                </div>
+              )}
 
-                  {showActiveTables && (
-                    <button
-                      type="button"
-                      id="btn-refresh-active-tables"
-                      onClick={handleRefreshActiveTables}
-                      disabled={isLoadingActiveTables}
-                      className="p-1 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer disabled:opacity-50"
-                      title="Refresh active tables"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingActiveTables ? 'animate-spin text-amber-400' : ''}`} />
-                    </button>
-                  )}
+              {/* Active Tables Discovery Section */}
+              <div className="p-3 rounded-2xl bg-stone-950/90 border border-stone-800 space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-stone-200 uppercase tracking-wide">
+                      Active Tables
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    id="btn-refresh-active-tables"
+                    onClick={handleRefreshActiveTables}
+                    disabled={isLoadingActiveTables}
+                    className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1 text-[11px]"
+                    title="Refresh active tables"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingActiveTables ? 'animate-spin text-amber-400' : ''}`} />
+                    <span className="hidden sm:inline">Refresh</span>
+                  </button>
                 </div>
 
-                {showActiveTables && (
-                  <div id="active-tables-container" className="p-3 rounded-2xl bg-stone-950/90 border border-stone-800 space-y-2">
-                    <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-stone-400 font-semibold px-2 pb-1 border-b border-stone-800/80">
-                      <span className="w-14">ID</span>
-                      <span className="flex-1 text-left px-1">HOST</span>
-                      <span className="w-16 text-center">HUMANS</span>
-                      <span className="w-16 text-right">STATUS</span>
-                      <span className="w-28 text-right sm:block hidden">ACTION</span>
-                    </div>
+                {isLoadingActiveTables && activeTables.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-stone-400 flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                    <span>Scanning active tables...</span>
+                  </div>
+                ) : activeTables.length === 0 ? (
+                  <div id="no-active-tables-container" className="py-8 px-4 text-center space-y-3">
+                    <p id="no-active-tables-msg" className="text-xs text-stone-400">
+                      No active tables found right now.
+                    </p>
+                    <button
+                      type="button"
+                      id="btn-empty-create-table"
+                      onClick={() => {
+                        soundManager.play('click');
+                        setActiveTab('create');
+                      }}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-400 border border-amber-600/30 font-semibold text-xs transition-colors cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Create New Table</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-0.5">
+                    {activeTables.map((table) => {
+                      const isFull = table.humanCount >= table.totalSeats || !table.isJoinable;
+                      return (
+                        <div
+                          key={table.roomCode}
+                          id={`active-table-row-${table.roomCode}`}
+                          className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-stone-900/90 border border-stone-800 text-xs font-medium transition-all ${
+                            isFull ? 'opacity-70' : 'hover:border-amber-700/60 hover:bg-amber-950/20'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-stone-100 truncate">
+                                {table.hostName}
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${
+                                  table.status === 'WAITING'
+                                    ? 'bg-amber-950/80 border border-amber-600/60 text-amber-300'
+                                    : 'bg-emerald-950/80 border border-emerald-600/60 text-emerald-300'
+                                }`}
+                              >
+                                {table.status === 'PLAYING'
+                                  ? `PLAYING (R${table.currentRound}/${table.totalRounds})`
+                                  : 'WAITING'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-stone-400 font-mono">
+                              <span>{table.humanCount}/{table.totalSeats} Players</span>
+                            </div>
+                          </div>
 
-                    {isLoadingActiveTables && activeTables.length === 0 ? (
-                      <div className="py-4 text-center text-xs text-stone-400 flex items-center justify-center gap-2">
-                        <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                        <span>Scanning active tables...</span>
-                      </div>
-                    ) : activeTables.length === 0 ? (
-                      <div id="no-active-tables-msg" className="py-4 text-center text-xs text-stone-400">
-                        No active tables available.
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar">
-                        {activeTables.map((table) => {
-                          const isFull = table.humanCount >= table.totalSeats || !table.isJoinable;
-                          return (
-                            <div
-                              key={table.roomCode}
-                              id={`active-table-row-${table.roomCode}`}
+                          <div className="shrink-0">
+                            <button
+                              type="button"
+                              id={`btn-join-active-table-${table.roomCode}`}
+                              disabled={isFull || isJoining || connectionState !== 'OPEN'}
                               onClick={() => {
                                 if (!isFull) handleSelectActiveTable(table.roomCode);
                               }}
-                              className={`w-full flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-2.5 rounded-xl bg-stone-900/80 border border-stone-800 text-xs font-medium transition-all ${
-                                isFull ? 'opacity-80 cursor-default' : 'cursor-pointer hover:border-amber-700/60 hover:bg-amber-950/30'
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer min-h-[36px] ${
+                                isFull
+                                  ? 'bg-stone-800 text-stone-500 cursor-not-allowed shadow-none'
+                                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                               }`}
                             >
-                              <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-4 flex-1 min-w-0">
-                                <span className="w-14 font-mono font-bold text-amber-400 shrink-0">
-                                  {table.roomCode}
-                                </span>
-                                <span className="flex-1 text-left px-1 text-stone-200 truncate">
-                                  {table.hostName}
-                                </span>
-                                <span className="w-16 text-center font-mono text-stone-300 shrink-0">
-                                  {table.humanCount}/{table.totalSeats}
-                                </span>
-                                <span className="w-16 text-right shrink-0">
-                                  <span
-                                    className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${
-                                      table.status === 'WAITING'
-                                        ? 'bg-amber-950/80 border border-amber-600/60 text-amber-300'
-                                        : 'bg-emerald-950/80 border border-emerald-600/60 text-emerald-300'
-                                    }`}
-                                  >
-                                    {table.status}
-                                  </span>
-                                </span>
-                              </div>
-
-                              <div className="flex items-center justify-end sm:w-auto w-full pt-1 sm:pt-0">
-                                <button
-                                  type="button"
-                                  id={`btn-join-active-table-${table.roomCode}`}
-                                  disabled={isFull}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!isFull) handleSelectActiveTable(table.roomCode);
-                                  }}
-                                  className={`w-full sm:w-auto px-4 py-2 sm:py-1.5 rounded-lg text-xs sm:text-sm font-medium shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer min-h-[40px] sm:min-h-0 ${
-                                    isFull
-                                      ? 'bg-stone-800 text-stone-400 cursor-not-allowed opacity-60 shadow-none'
-                                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                                  }`}
-                                >
-                                  {isFull ? (
-                                    <span>Full ({table.humanCount}/{table.totalSeats})</span>
-                                  ) : (
-                                    <>
-                                      <span>Join Table</span>
-                                      <ArrowRight className="w-3.5 h-3.5" />
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                              {isFull ? (
+                                <span>Full</span>
+                              ) : (
+                                <>
+                                  <span>Join</span>
+                                  <ArrowRight className="w-3.5 h-3.5" />
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-            </form>
+            </div>
           )}
 
           {/* Footer note */}

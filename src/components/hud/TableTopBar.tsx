@@ -26,7 +26,7 @@ import { useSound } from '../../core/sound/useSound';
 import { soundManager } from '../../core/sound/SoundManager';
 import { PWAInstallButton } from '../pwa/PWAInstallButton';
 import { ConnectionState, RoomState } from '../../models/multiplayer';
-import { sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
+import { ConnectionDotStatus, sharedMultiplayerClient } from '../../services/multiplayer/MultiplayerClient';
 
 interface TableTopBarProps {
   state: GameState;
@@ -61,6 +61,9 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
   const [connectionState, setConnectionState] = useState<ConnectionState>(() =>
     sharedMultiplayerClient.getConnectionState()
   );
+  const [dotStatus, setDotStatus] = useState<ConnectionDotStatus>(() =>
+    sharedMultiplayerClient.getConnectionDotStatus()
+  );
   const [roomCode, setRoomCode] = useState<string | null>(() => {
     const r = sharedMultiplayerClient.getRoomState();
     return r ? r.roomCode : null;
@@ -73,12 +76,16 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
     const unsubConn = sharedMultiplayerClient.onConnectionState((conn) => {
       setConnectionState(conn);
     });
+    const unsubDot = sharedMultiplayerClient.onConnectionDotStatus((status) => {
+      setDotStatus(status);
+    });
     const unsubRoom = sharedMultiplayerClient.onRoomState((r) => {
       setRoomCode(r.roomCode);
       setRoomState(r);
     });
     return () => {
       unsubConn();
+      unsubDot();
       unsubRoom();
     };
   }, []);
@@ -146,8 +153,21 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
             <span className="text-amber-300 drop-shadow-xs">♠</span>
           </div>
           <div className="text-left flex flex-col justify-center">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5">
               <span className="text-xs sm:text-sm font-extrabold tracking-tight text-white whitespace-nowrap">Call Break</span>
+              {/* Connection Status Dot */}
+              <span
+                id="indicator-connection-dot"
+                className={`w-2 h-2 rounded-full shrink-0 transition-colors duration-300 ${
+                  dotStatus === 'green'
+                    ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]'
+                    : dotStatus === 'yellow'
+                    ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)] animate-pulse'
+                    : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]'
+                }`}
+                aria-label={`Connection status: ${dotStatus}`}
+                title={`Connection: ${dotStatus}`}
+              />
               <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-stone-900 border border-stone-700/90 text-stone-300 font-bold hidden sm:inline">
                 Lakdi
               </span>
@@ -205,7 +225,7 @@ export const TableTopBar: React.FC<TableTopBarProps> = ({
         {/* In-Game Table Live Status (Multiplayer) */}
         {isMultiplayer && (
           <div className="hidden md:flex items-center shrink-0">
-            {connectionState === 'OPEN' ? (
+            {connectionState === 'OPEN' && dotStatus === 'green' ? (
               <div
                 id="badge-table-online"
                 className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-lg sm:rounded-xl bg-emerald-950/80 border border-emerald-600/70 flex items-center gap-1.5 shadow-xs text-emerald-300 font-mono text-[9px] sm:text-xs"

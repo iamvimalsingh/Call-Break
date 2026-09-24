@@ -1,7 +1,15 @@
 import { buildCompleteTestSuite } from './index';
+import { buildAdminApiTestSuite } from './adminApi.test';
+import { buildWsValidationTestSuite } from './wsValidation.test';
+import { buildConnectionReliabilityTestSuite } from './connectionReliability.test';
+import { buildOrphanCleanupAndJoinValidationTestSuite } from './orphanCleanupAndJoinValidation.test';
 
 async function main() {
   const runner = buildCompleteTestSuite();
+  runner.include(buildAdminApiTestSuite());
+  runner.include(buildWsValidationTestSuite());
+  runner.include(buildConnectionReliabilityTestSuite());
+  runner.include(buildOrphanCleanupAndJoinValidationTestSuite());
   const summary = await runner.runAll();
   console.log(`\n========================================`);
   console.log(`CALL BREAK TEST RESULTS`);

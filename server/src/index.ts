@@ -9,12 +9,15 @@ import express from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { ClientMessage, ServerMessage } from '../../src/models/multiplayer';
 import { RoomManager } from './RoomManager';
+import { createAdminRouter } from './adminRouter';
+import { parseAndValidateWsMessage, WsRateLimiter } from './wsGuard';
 
 export const PORT = Number(process.env.PORT) || 3001;
 
-export function setupWebSocketServer(server: HttpServer): WebSocketServer {
+export function setupWebSocketServer(server: HttpServer, customRateLimiter?: WsRateLimiter): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true });
   const roomManager = RoomManager.getInstance();
+  const rateLimiter = customRateLimiter || new WsRateLimiter();
 
   console.log('[WebSocket] CallBreak Multiplayer WebSocket server initialized');
 
@@ -56,8 +59,22 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 
     socket.on('message', (rawData: string | Buffer) => {
       try {
-        const text = rawData.toString('utf8');
-        const msg = JSON.parse(text) as ClientMessage;
+        const guardResult = parseAndValidateWsMessage(rawData, socket, rateLimiter);
+        if (!guardResult.ok) {
+          if (socket.readyState === WebSocket.OPEN) {
+            const errMsg: ServerMessage = {
+              type: 'ERROR',
+              payload: {
+                code: guardResult.errorCode || 'INVALID_PAYLOAD',
+                message: guardResult.errorMessage || 'Invalid message format',
+              },
+            };
+            socket.send(JSON.stringify(errMsg));
+          }
+          return;
+        }
+
+        const msg = guardResult.message!;
 
         switch (msg.type) {
           case 'GET_ACTIVE_ROOMS': {
@@ -180,7 +197,9 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
           }
 
           case 'CLIENT_READY': {
-            const room = roomManager.getRoomByClientId(clientId);
+            const room =
+              roomManager.getRoomByClientId(clientId) ||
+              (msg.payload?.roomCode ? roomManager.getRoom(msg.payload.roomCode) : undefined);
             if (room) {
               room.handleClientReady(clientId);
             }
@@ -297,11 +316,13 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
     });
 
     socket.on('close', () => {
+      rateLimiter.cleanup(socket);
       console.log(`[WebSocket] Client disconnected: ${clientId}`);
       roomManager.leaveRoom(clientId, false);
     });
 
     socket.on('error', (err) => {
+      rateLimiter.cleanup(socket);
       console.error(`[WebSocket] Error for client ${clientId}:`, err.message);
       roomManager.leaveRoom(clientId, false);
     });
@@ -318,6 +339,7 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 
   wss.on('close', () => {
     clearInterval(interval);
+    rateLimiter.reset();
   });
 
   return wss;
@@ -326,25 +348,32 @@ export function setupWebSocketServer(server: HttpServer): WebSocketServer {
 /**
  * Creates Express application with basic HTTP health-check routes required by Render.com
  */
-export function createServerApp(): express.Express {
+export function createServerApp(getActiveConnectionsCount?: () => number): express.Express {
   const app = express();
   app.use(express.json());
 
   // Permissive CORS for health endpoints and cross-origin WebSocket polling
   app.use((_req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
     next();
   });
 
-  // Basic HTTP health-check routes for Render.com
+  // Basic HTTP health-check routes for Render.com & control plane
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', service: 'callbreak-server' });
+  });
+
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', service: 'callbreak-server', timestamp: new Date().toISOString() });
   });
 
   app.get('/', (_req, res) => {
     res.json({ status: 'ok', service: 'callbreak-server' });
   });
+
+  // Authenticated Admin REST inspection endpoints
+  app.use('/api/admin', createAdminRouter({ getActiveConnectionsCount }));
 
   return app;
 }
@@ -357,9 +386,10 @@ export function startStandaloneServer(port: number = PORT): {
   server: HttpServer;
   wss: WebSocketServer;
 } {
-  const app = createServerApp();
-  const server = http.createServer(app);
+  const server = http.createServer();
   const wss = setupWebSocketServer(server);
+  const app = createServerApp(() => wss.clients.size);
+  server.on('request', app);
 
   server.listen(port, '0.0.0.0', () => {
     console.log(`[CallBreak Server] Running on http://0.0.0.0:${port}`);
