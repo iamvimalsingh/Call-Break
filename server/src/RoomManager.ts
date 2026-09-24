@@ -149,6 +149,8 @@ export class GameRoom {
   private creatorClientId: string;
   private lobbyGraceTimer: NodeJS.Timeout | null = null;
   private lobbyOrphanedAt: number | null = null;
+  private lobbyHostTransferTimer: NodeJS.Timeout | null = null;
+  private lobbyHostDisconnectedAt: number | null = null;
 
   private controller: AuthoritativeGameController | null = null;
   private unsubscribeEvents: (() => void) | null = null;
@@ -296,6 +298,30 @@ export class GameRoom {
       customCleanup();
     } else if (this.status === 'LOBBY' && this.getConnectedClientCount() === 0 && !this.hasActiveReservations()) {
       RoomManager.getInstance().cleanupRoom(this.roomCode);
+    }
+  }
+
+  public isLobbyHostTransferPending(): boolean {
+    if (this.status !== 'LOBBY' || this.isDestroyed) return false;
+    if (!this.lobbyHostDisconnectedAt) return false;
+    return Date.now() - this.lobbyHostDisconnectedAt <= 45000;
+  }
+
+  public getLobbyHostDisconnectedAt(): number | null {
+    return this.lobbyHostDisconnectedAt;
+  }
+
+  public expireLobbyHostTransferForTesting(): void {
+    if (this.lobbyHostTransferTimer) {
+      clearTimeout(this.lobbyHostTransferTimer);
+      this.lobbyHostTransferTimer = null;
+    }
+    this.lobbyHostDisconnectedAt = null;
+    if (this.status === 'LOBBY' && !this.isDestroyed) {
+      const transferred = this.ensureHumanHost(true);
+      if (transferred) {
+        this.broadcastRoomState();
+      }
     }
   }
 
@@ -704,19 +730,52 @@ export class GameRoom {
       /^(friend|player|guest|user|friend \(you\)|host player|host player \(you\))$/i.test(rawIncoming);
     const assignedName = isGeneric ? defaultName : rawIncoming;
 
+    const isReturningHost = (savedDisconnect?.wasHost ?? false) || clientId === this.creatorClientId;
+
+    // Check if there is currently an active connected human acting as Host
+    const currentHostPos = this.clientPositions.get(this.hostClientId);
+    const currentHost = currentHostPos ? this.players.get(currentHostPos) : undefined;
+    const isCurrentHostConnected =
+      currentHost &&
+      !currentHost.isBot &&
+      this.clientSockets.has(currentHost.id) &&
+      this.clientSockets.get(currentHost.id)?.readyState === WebSocket.OPEN;
+
+    let shouldBeHost = false;
+    if (isReturningHost) {
+      // Returning host regains host if no active connected human host exists
+      shouldBeHost = !isCurrentHostConnected;
+      if (this.lobbyHostTransferTimer) {
+        clearTimeout(this.lobbyHostTransferTimer);
+        this.lobbyHostTransferTimer = null;
+      }
+      this.lobbyHostDisconnectedAt = null;
+    } else {
+      // For any other joiner, if host transfer is pending (<45s), do not make them host yet!
+      shouldBeHost = !isCurrentHostConnected && !this.isLobbyHostTransferPending() && this.getConnectedClientCount() === 0;
+    }
+
     const participant: RoomParticipant = {
       id: clientId,
       playerId: seatId,
       name: assignedName,
       position: openPosition,
-      isHost: false,
+      isHost: shouldBeHost,
       isReady: true,
       isBot: false,
     };
 
+    if (shouldBeHost) {
+      this.hostClientId = clientId;
+    }
+
     this.players.set(openPosition, participant);
     this.clientSockets.set(clientId, socket);
     this.clientPositions.set(clientId, openPosition);
+
+    if (savedDisconnect) {
+      this.clearSeatReservation(openPosition);
+    }
 
     this.ensureHumanHost(false);
     this.broadcastRoomState();
@@ -784,6 +843,11 @@ export class GameRoom {
           p.isHost = false;
         }
       }
+      return false;
+    }
+
+    // 2b. In LOBBY status, if the 45-second host reconnect window is pending, do not transfer Host to another human yet
+    if (this.status === 'LOBBY' && this.isLobbyHostTransferPending()) {
       return false;
     }
 
@@ -866,9 +930,7 @@ export class GameRoom {
     };
     this.players.set(pos, botParticipant);
 
-    // Rule 2: Deterministic Host Transfer Rule - Enforce Human-Host Invariant immediately and atomically
-    this.ensureHumanHost(true);
-
+    // Rule 2: Deterministic Host Transfer Rule - Enforce Human-Host Invariant
     if (this.status === 'LOBBY') {
       if (isExplicit) {
         this.clearSeatReservation(pos);
@@ -877,6 +939,12 @@ export class GameRoom {
           this.lobbyGraceTimer = null;
         }
         this.lobbyOrphanedAt = null;
+        if (this.lobbyHostTransferTimer) {
+          clearTimeout(this.lobbyHostTransferTimer);
+          this.lobbyHostTransferTimer = null;
+        }
+        this.lobbyHostDisconnectedAt = null;
+        this.ensureHumanHost(true);
       } else {
         const seatInfo: DisconnectedSeatInfo = {
           position: pos,
@@ -889,6 +957,25 @@ export class GameRoom {
         if (cleanPlayerName) {
           this.disconnectedSeats.set(cleanPlayerName.toLowerCase(), seatInfo);
         }
+
+        if (wasHost) {
+          this.lobbyHostDisconnectedAt = Date.now();
+          if (this.lobbyHostTransferTimer) {
+            clearTimeout(this.lobbyHostTransferTimer);
+          }
+          this.lobbyHostTransferTimer = setTimeout(() => {
+            this.lobbyHostTransferTimer = null;
+            this.lobbyHostDisconnectedAt = null;
+            if (this.status === 'LOBBY' && !this.isDestroyed) {
+              const transferred = this.ensureHumanHost(true);
+              if (transferred) {
+                this.broadcastRoomState();
+              }
+            }
+          }, 45000);
+        }
+
+        this.ensureHumanHost(true);
 
         if (this.getConnectedClientCount() === 0) {
           if (!this.lobbyGraceTimer) {
@@ -905,11 +992,13 @@ export class GameRoom {
       }
       this.broadcastRoomState();
     } else if (this.status === 'FINISHED') {
+      this.ensureHumanHost(true);
       this.broadcastRoomState();
       if (this.getConnectedClientCount() === 0) {
         RoomManager.getInstance().cleanupRoom(this.roomCode);
       }
     } else if (this.status === 'PLAYING') {
+      this.ensureHumanHost(true);
       // Clear any previous reservations for this seat
       this.clearSeatReservation(pos);
 
@@ -1337,6 +1426,12 @@ export class GameRoom {
     }
     this.lobbyOrphanedAt = null;
 
+    if (this.lobbyHostTransferTimer) {
+      clearTimeout(this.lobbyHostTransferTimer);
+      this.lobbyHostTransferTimer = null;
+    }
+    this.lobbyHostDisconnectedAt = null;
+
     // Clean up previous controller resources if restarting a match
     if (this.unsubscribeEvents) {
       this.unsubscribeEvents();
@@ -1760,6 +1855,12 @@ export class GameRoom {
       this.lobbyGraceTimer = null;
     }
     this.lobbyOrphanedAt = null;
+
+    if (this.lobbyHostTransferTimer) {
+      clearTimeout(this.lobbyHostTransferTimer);
+      this.lobbyHostTransferTimer = null;
+    }
+    this.lobbyHostDisconnectedAt = null;
 
     if (this.finishedCleanupTimer) {
       clearTimeout(this.finishedCleanupTimer);
