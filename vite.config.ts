@@ -15,6 +15,9 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig(() => {
   return {
+    define: {
+      global: 'globalThis',
+    },
     plugins: [
       react(),
       tailwindcss(),
@@ -107,11 +110,12 @@ export default defineConfig(() => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+        buffer: 'buffer',
       },
       dedupe: ['react', 'react-dom'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', 'motion/react', 'lucide-react'],
+      include: ['react', 'react-dom', 'motion/react', 'lucide-react', 'buffer'],
     },
     server: {
       host: '0.0.0.0',

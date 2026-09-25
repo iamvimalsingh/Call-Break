@@ -10,7 +10,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { ClientMessage, ServerMessage } from '../../src/models/multiplayer';
 import { RoomManager } from './RoomManager';
 import { createAdminRouter } from './adminRouter';
+import { createPlayerRouter } from './playerRouter';
 import { parseAndValidateWsMessage, WsRateLimiter } from './wsGuard';
+import { PersistenceService } from './db/PersistenceService';
 
 export const PORT = Number(process.env.PORT) || 3001;
 
@@ -125,6 +127,9 @@ export function setupWebSocketServer(server: HttpServer, customRateLimiter?: WsR
             if (totalRounds && (totalRounds === 5 || totalRounds === 10)) {
               room.totalRounds = totalRounds;
             }
+            if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
+              PersistenceService.getInstance().onPlayerJoin(playerId.trim(), trimmedName).catch(() => {});
+            }
             console.log(`[WebSocket] Room created: ${room.roomCode} by ${clientId}`);
             break;
           }
@@ -163,6 +168,9 @@ export function setupWebSocketServer(server: HttpServer, customRateLimiter?: WsR
               };
               socket.send(JSON.stringify(errMsg));
             } else {
+              if (playerId && typeof playerId === 'string' && playerId.trim().length > 0) {
+                PersistenceService.getInstance().onPlayerJoin(playerId.trim(), trimmedName).catch(() => {});
+              }
               console.log(`[WebSocket] Client ${clientId} joined room: ${roomCode}`);
             }
             break;
@@ -374,6 +382,9 @@ export function createServerApp(getActiveConnectionsCount?: () => number): expre
 
   // Authenticated Admin REST inspection endpoints
   app.use('/api/admin', createAdminRouter({ getActiveConnectionsCount }));
+
+  // Player Profile & Scorecard REST endpoints
+  app.use('/api/player', createPlayerRouter());
 
   return app;
 }

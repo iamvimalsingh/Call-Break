@@ -3,6 +3,9 @@ import { buildAdminApiTestSuite } from './adminApi.test';
 import { buildWsValidationTestSuite } from './wsValidation.test';
 import { buildConnectionReliabilityTestSuite } from './connectionReliability.test';
 import { buildOrphanCleanupAndJoinValidationTestSuite } from './orphanCleanupAndJoinValidation.test';
+import { buildAdminPanelTestSuite } from './adminPanel.test';
+import { buildPersistenceTestSuite } from './persistence.test';
+import { buildPlayerProfileTestSuite } from './playerProfile.test';
 
 async function main() {
   const runner = buildCompleteTestSuite();
@@ -10,6 +13,9 @@ async function main() {
   runner.include(buildWsValidationTestSuite());
   runner.include(buildConnectionReliabilityTestSuite());
   runner.include(buildOrphanCleanupAndJoinValidationTestSuite());
+  runner.include(buildAdminPanelTestSuite());
+  runner.include(buildPersistenceTestSuite());
+  buildPlayerProfileTestSuite(runner);
   const summary = await runner.runAll();
   console.log(`\n========================================`);
   console.log(`CALL BREAK TEST RESULTS`);

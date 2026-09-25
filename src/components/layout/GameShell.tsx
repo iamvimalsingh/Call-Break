@@ -36,10 +36,14 @@ import { useSettings } from '../../core/settings/useSettings';
 import { sharedHistoryService } from '../../core/history/HistoryService';
 import { soundManager } from '../../core/sound/SoundManager';
 import { OfflineIndicator } from '../pwa/OfflineIndicator';
-import { Layers, Trophy, BookOpen, RotateCcw, ShieldCheck, Volume2, VolumeX, Settings, HelpCircle, BarChart2, History, Sparkles, PlusCircle, LogIn } from 'lucide-react';
+import { Layers, Trophy, BookOpen, RotateCcw, ShieldCheck, Volume2, VolumeX, Settings, HelpCircle, BarChart2, History, Sparkles, PlusCircle, LogIn, KeyRound } from 'lucide-react';
 import { useSound } from '../../core/sound/useSound';
 
-export const GameShell: React.FC = () => {
+export interface GameShellProps {
+  onNavigateToAdmin?: () => void;
+}
+
+export const GameShell: React.FC<GameShellProps> = ({ onNavigateToAdmin }) => {
   const [gameState, setGameState] = useState<GameState>(() => sharedGameStore.getState());
   const [isScoreboardOpen, setIsScoreboardOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
@@ -632,6 +636,17 @@ export const GameShell: React.FC = () => {
                   <BarChart2 className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Player Stats</span>
                 </button>
+
+                {onNavigateToAdmin && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToAdmin}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800/90 text-slate-300 hover:text-white border border-slate-700/70 transition-all flex items-center gap-2 text-xs font-mono cursor-pointer shadow-xs"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Admin Ops</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

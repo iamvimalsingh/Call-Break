@@ -9,6 +9,7 @@ import { ActiveTableSummary, PlayerSeatId, RoomParticipant, RoomState, ServerMes
 import { AuthoritativeGameController, PlayerSetupInfo } from './AuthoritativeGameController';
 import { Card } from '../../src/models/card';
 import { GameStatus } from '../../src/models/gameState';
+import { PersistenceService } from './db/PersistenceService';
 
 export const SEAT_ORDER: readonly PlayerPosition[] = [
   PlayerPosition.SOUTH,
@@ -133,6 +134,7 @@ export class GameRoom {
   public status: 'LOBBY' | 'PLAYING' | 'FINISHED' = 'LOBBY';
   public autoFillBots: boolean = true;
   public totalRounds: number = 5;
+  public persistentMatchId: string | null = null;
   
   // Position to participant (Always contains 4 stable seats: P1, P2, P3, P4)
   private players = new Map<PlayerPosition, RoomParticipant>();
@@ -1525,10 +1527,51 @@ export class GameRoom {
         type: 'GAME_EVENT',
         payload: event,
       });
+
+      if (event.type === 'ROUND_COMPLETED') {
+        if (this.controller && this.persistentMatchId) {
+          const state = this.controller.getState();
+          const roundNum = event.payload.roundNumber;
+          const roundScoreRecord = state.roundScores.find((r) => r.roundNumber === roundNum);
+          if (roundScoreRecord) {
+            const bids: Record<PlayerPosition, number | null> = {
+              [PlayerPosition.SOUTH]: state.players[PlayerPosition.SOUTH]?.currentBid ?? null,
+              [PlayerPosition.WEST]: state.players[PlayerPosition.WEST]?.currentBid ?? null,
+              [PlayerPosition.NORTH]: state.players[PlayerPosition.NORTH]?.currentBid ?? null,
+              [PlayerPosition.EAST]: state.players[PlayerPosition.EAST]?.currentBid ?? null,
+            };
+            const tricks: Record<PlayerPosition, number> = {
+              [PlayerPosition.SOUTH]: state.players[PlayerPosition.SOUTH]?.tricksWon ?? 0,
+              [PlayerPosition.WEST]: state.players[PlayerPosition.WEST]?.tricksWon ?? 0,
+              [PlayerPosition.NORTH]: state.players[PlayerPosition.NORTH]?.tricksWon ?? 0,
+              [PlayerPosition.EAST]: state.players[PlayerPosition.EAST]?.tricksWon ?? 0,
+            };
+            PersistenceService.getInstance().onRoundComplete(
+              this.persistentMatchId,
+              roundNum,
+              state.dealer,
+              roundScoreRecord,
+              bids,
+              tricks,
+              this.getParticipants()
+            ).catch(() => {});
+          }
+        }
+      }
+
       if (event.type === 'MATCH_COMPLETED') {
         this.status = 'FINISHED';
         this.broadcastRoomState();
         this.scheduleFinishedCleanup();
+
+        if (this.controller && this.persistentMatchId) {
+          const state = this.controller.getState();
+          PersistenceService.getInstance().onMatchComplete(
+            this.persistentMatchId,
+            state,
+            this.getParticipants()
+          ).catch(() => {});
+        }
       }
     });
 
@@ -1579,6 +1622,14 @@ export class GameRoom {
 
     this.controller.initializeMatch(playerConfigs, this.totalRounds, false);
     this.broadcastGameState();
+
+    // Trigger persistent match creation asynchronously
+    PersistenceService.getInstance()
+      .onMatchStart(this.roomCode, this.totalRounds, this.getParticipants())
+      .then((mId) => {
+        this.persistentMatchId = mId;
+      })
+      .catch(() => {});
 
     if (this.readyFallbackTimer) {
       clearTimeout(this.readyFallbackTimer);

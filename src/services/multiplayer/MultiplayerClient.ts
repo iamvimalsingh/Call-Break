@@ -60,10 +60,39 @@ export type ConnectionDotListener = (
 ) => void;
 
 const PLAYER_ID_STORAGE_KEY = 'cb_player_id';
+const PLAYER_TOKEN_STORAGE_KEY = 'cb_player_token';
 const PLAYER_NAME_STORAGE_KEY = 'cb_player_name';
 const ACTIVE_TABLE_STORAGE_KEY = 'cb_active_table_id';
 const CONFIRMED_SEAT_STORAGE_KEY = 'cb_confirmed_seat';
 const PREFERRED_ROOM_STORAGE_KEY = 'cb_preferred_room_id';
+
+/**
+ * Returns the stored server-signed anonymous identity token, if any.
+ */
+export function getStoredPlayerToken(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem(PLAYER_TOKEN_STORAGE_KEY);
+      return val && val.trim().length > 0 ? val.trim() : null;
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Persists or clears the server-signed anonymous identity token.
+ */
+export function setStoredPlayerToken(token: string | null): void {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (token && token.trim().length > 0) {
+        localStorage.setItem(PLAYER_TOKEN_STORAGE_KEY, token.trim());
+      } else {
+        localStorage.removeItem(PLAYER_TOKEN_STORAGE_KEY);
+      }
+    }
+  } catch {}
+}
 
 /**
  * Returns the player name persisted in localStorage, if any.

@@ -1,9 +1,17 @@
+import { Buffer } from 'buffer';
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {ErrorBoundary} from './components/common/ErrorBoundary';
 import {initializeServiceWorker} from './services/pwaService';
 import './index.css';
+
+// Polyfill Buffer and global for browser runtime
+if (typeof window !== 'undefined') {
+  (window as any).Buffer = Buffer;
+  (window as any).global = window;
+  (globalThis as any).Buffer = Buffer;
+}
 
 // Global unhandled rejection and error shield to prevent white screen crashes
 if (typeof window !== 'undefined') {

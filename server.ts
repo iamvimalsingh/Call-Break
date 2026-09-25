@@ -3,6 +3,9 @@ if (typeof (globalThis as any).__dirname === 'string' && (globalThis as any).__d
   delete (globalThis as any).__dirname;
 }
 
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import http from "http";
 import fs from "fs";

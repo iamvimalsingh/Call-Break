@@ -8,6 +8,8 @@ import { GameRoom, POSITION_TO_SEAT, SEAT_ORDER, RoomManager } from './RoomManag
 import { PlayerPosition } from '../../src/models/player';
 import { PlayerSeatId } from '../../src/models/multiplayer';
 import { GameStatus, RoundScoreRecord } from '../../src/models/gameState';
+import { isDatabaseConfigured } from './db/dbPool';
+import { PersistenceService } from './db/PersistenceService';
 
 export interface AdminStatsDTO {
   serverUptimeSeconds: number;
@@ -27,6 +29,11 @@ export interface AdminStatsDTO {
     externalBytes: number;
   };
   serverVersion: string;
+  persistence?: {
+    enabled: boolean;
+    connected: boolean;
+    driver: string;
+  };
 }
 
 export interface AdminRoomSeatSummaryDTO {
@@ -183,6 +190,11 @@ export function serializeAdminStats(
       externalBytes: mem.external,
     },
     serverVersion: process.env.npm_package_version || '1.0.0',
+    persistence: {
+      enabled: isDatabaseConfigured(),
+      connected: PersistenceService.getInstance().isAvailable(),
+      driver: isDatabaseConfigured() ? 'postgres' : 'none',
+    },
   };
 }
 
