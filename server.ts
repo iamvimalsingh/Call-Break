@@ -1,4 +1,4 @@
-// Ensure tsx does not define globalThis.__dirname as '.' which causes ESM plugins to resolve paths incorrectly
+// Ensure tsx does not define globalThis.__dirname as '.' which breaks ESM libraries expecting standard Node ESM
 if (typeof (globalThis as any).__dirname === 'string' && (globalThis as any).__dirname === '.') {
   delete (globalThis as any).__dirname;
 }
@@ -17,10 +17,10 @@ import { createAdminRouter } from "./server/src/adminRouter";
 async function startServer() {
   const app = express();
   const server = http.createServer(app);
-  // In development, dev server MUST run on 3000 (reverse-proxied by nginx).
-  // In production (e.g. Cloud Run), listen on process.env.PORT (typically 8080) as provided by Cloud Run container runtime.
-  const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.K_SERVICE);
-  const PORT = isProduction ? (Number(process.env.PORT) || 8080) : 3000;
+
+  // Robust port resolution: respect process.env.PORT if set, otherwise 8080 on Cloud Run (K_SERVICE), else 3000 for AI Studio Preview & local dev.
+  const isCloudRun = Boolean(process.env.K_SERVICE);
+  const PORT = Number(process.env.PORT) || (isCloudRun ? 8080 : 3000);
 
   app.use(express.json());
 
@@ -42,31 +42,39 @@ async function startServer() {
 
   // Vite middleware for development vs static dist for production
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn("[Server] Vite dev middleware failed to load, falling back to static/API mode:", e);
+    }
   } else {
     let distPath = path.join(process.cwd(), "dist");
     if (!fs.existsSync(path.join(distPath, "index.html"))) {
       const buildPath = path.join(process.cwd(), "build");
       if (fs.existsSync(path.join(buildPath, "index.html"))) {
         distPath = buildPath;
-      } else if (fs.existsSync(path.join(process.cwd(), "index.html"))) {
+      } else {
         distPath = process.cwd();
       }
     }
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.sendFile(path.join(process.cwd(), "index.html"));
+      }
     });
   }
 
   server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`Server running on port ${PORT}`);
-    console.log(`CallBreak full-stack server running on http://0.0.0.0:${PORT}`);
+    console.log(`[CallBreak Server] Running on http://0.0.0.0:${PORT}`);
+    console.log(`[CallBreak Server] Health check ready at http://0.0.0.0:${PORT}/health`);
   });
 }
 

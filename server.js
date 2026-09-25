@@ -7489,8 +7489,8 @@ dotenv.config();
 async function startServer() {
   const app = express2();
   const server = http2.createServer(app);
-  const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.K_SERVICE);
-  const PORT2 = isProduction ? Number(process.env.PORT) || 8080 : 3e3;
+  const isCloudRun = Boolean(process.env.K_SERVICE);
+  const PORT2 = Number(process.env.PORT) || (isCloudRun ? 8080 : 3e3);
   app.use(express2.json());
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", service: "callbreak-server" });
@@ -7501,30 +7501,38 @@ async function startServer() {
   const wss = setupWebSocketServer(server);
   app.use("/api/admin", createAdminRouter({ getActiveConnectionsCount: () => wss.clients.size }));
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa"
-    });
-    app.use(vite.middlewares);
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa"
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn("[Server] Vite dev middleware failed to load, falling back to static/API mode:", e);
+    }
   } else {
     let distPath = path.join(process.cwd(), "dist");
     if (!fs.existsSync(path.join(distPath, "index.html"))) {
       const buildPath = path.join(process.cwd(), "build");
       if (fs.existsSync(path.join(buildPath, "index.html"))) {
         distPath = buildPath;
-      } else if (fs.existsSync(path.join(process.cwd(), "index.html"))) {
+      } else {
         distPath = process.cwd();
       }
     }
     app.use(express2.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexPath = path.join(distPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.sendFile(path.join(process.cwd(), "index.html"));
+      }
     });
   }
   server.listen(PORT2, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT2}`);
-    console.log(`Server running on port ${PORT2}`);
-    console.log(`CallBreak full-stack server running on http://0.0.0.0:${PORT2}`);
+    console.log(`[CallBreak Server] Running on http://0.0.0.0:${PORT2}`);
+    console.log(`[CallBreak Server] Health check ready at http://0.0.0.0:${PORT2}/health`);
   });
 }
 startServer();
