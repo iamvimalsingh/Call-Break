@@ -1,6 +1,7 @@
 /**
- * Central Test Suite Registry
- * Aggregates Phase 1 Architectural and Phase 2 Card Engine tests.
+ * Central Browser-Safe Test Suite Registry
+ * Aggregates client-side Architecture, Card Engine, Rules Engine, Scoring, Bot Strategy, and offline flow tests.
+ * STRICTLY BROWSER-SAFE: Contains zero server or database imports so no server/db code enters the Vite client bundle.
  */
 
 import { TestHarness } from './testHarness';
@@ -17,18 +18,8 @@ import { buildPhase11SaveResumeTestSuite } from './phase11SaveResume.test';
 import { buildPhase12QASimulatorTestSuite } from './phase12QASimulator.test';
 import { buildPhase14NetlifyPWATestSuite } from './phase14NetlifyPWA.test';
 import { buildSoloWeightedDealTestSuite } from './soloWeightedDeal.test';
-import { buildMidGameJoinTestSuite } from './midGameJoin.test';
-import { buildRoundLifecycleTestSuite } from './roundLifecycle.test';
-import { buildHostTurnTimerTestSuite } from './hostTurnTimer.test';
-import { buildCustomRoomIdTestSuite } from './customRoomId.test';
 import { buildPreferredRoomIdTestSuite } from './preferredRoomIdStorage.test';
 import { buildPlayerSeatPrefixTestSuite } from './playerSeatPrefix.test';
-import { buildHostLifecycleTestSuite } from './hostLifecycle.test';
-import { buildWaitingTableVsActiveMatchTestSuite } from './waitingTableVsActiveMatch.test';
-import { buildActiveTableDiscoveryTestSuite } from './activeTableDiscovery.test';
-import { buildJoinerWaitingRoomFlowTestSuite } from './joinerWaitingRoomFlow.test';
-import { buildNewTableDraftVsCreationTestSuite } from './newTableDraftVsCreation.test';
-import { buildMandatoryNameAndRoomIdPolicyTestSuite } from './mandatoryNameAndRoomIdPolicy.test';
 
 export function buildCompleteTestSuite(): TestHarness {
   const composite = new TestHarness();
@@ -45,18 +36,8 @@ export function buildCompleteTestSuite(): TestHarness {
   composite.include(buildPhase12QASimulatorTestSuite());
   composite.include(buildPhase14NetlifyPWATestSuite());
   composite.include(buildSoloWeightedDealTestSuite());
-  composite.include(buildMidGameJoinTestSuite());
-  composite.include(buildRoundLifecycleTestSuite());
-  composite.include(buildHostTurnTimerTestSuite());
-  composite.include(buildCustomRoomIdTestSuite());
   composite.include(buildPreferredRoomIdTestSuite());
   composite.include(buildPlayerSeatPrefixTestSuite());
-  composite.include(buildHostLifecycleTestSuite());
-  composite.include(buildWaitingTableVsActiveMatchTestSuite());
-  composite.include(buildActiveTableDiscoveryTestSuite());
-  composite.include(buildJoinerWaitingRoomFlowTestSuite());
-  composite.include(buildNewTableDraftVsCreationTestSuite());
-  composite.include(buildMandatoryNameAndRoomIdPolicyTestSuite());
   return composite;
 }
 
@@ -73,4 +54,6 @@ export { buildPhase11SaveResumeTestSuite } from './phase11SaveResume.test';
 export { buildPhase12QASimulatorTestSuite } from './phase12QASimulator.test';
 export { buildPhase14NetlifyPWATestSuite } from './phase14NetlifyPWA.test';
 export { buildSoloWeightedDealTestSuite } from './soloWeightedDeal.test';
+export { buildPreferredRoomIdTestSuite } from './preferredRoomIdStorage.test';
+export { buildPlayerSeatPrefixTestSuite } from './playerSeatPrefix.test';
 export * from './testHarness';

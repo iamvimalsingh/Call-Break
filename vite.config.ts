@@ -115,6 +115,8 @@ export default defineConfig(() => {
       dedupe: ['react', 'react-dom'],
     },
     optimizeDeps: {
+      entries: ['index.html', 'src/**/*.{ts,tsx}'],
+      exclude: ['pg', 'pg-mem', 'pg-pool', 'express', 'ws'],
       include: ['react', 'react-dom', 'motion/react', 'lucide-react', 'buffer'],
     },
     server: {

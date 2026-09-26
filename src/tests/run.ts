@@ -1,4 +1,5 @@
 import { buildCompleteTestSuite } from './index';
+import { buildServerMultiplayerTestSuite } from './serverSuite';
 import { buildAdminApiTestSuite } from './adminApi.test';
 import { buildWsValidationTestSuite } from './wsValidation.test';
 import { buildConnectionReliabilityTestSuite } from './connectionReliability.test';
@@ -9,6 +10,7 @@ import { buildPlayerProfileTestSuite } from './playerProfile.test';
 
 async function main() {
   const runner = buildCompleteTestSuite();
+  runner.include(buildServerMultiplayerTestSuite());
   runner.include(buildAdminApiTestSuite());
   runner.include(buildWsValidationTestSuite());
   runner.include(buildConnectionReliabilityTestSuite());

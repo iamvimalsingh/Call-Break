@@ -6,7 +6,7 @@ import {ErrorBoundary} from './components/common/ErrorBoundary';
 import {initializeServiceWorker} from './services/pwaService';
 import './index.css';
 
-// Polyfill Buffer and global for browser runtime
+// Provide standard Buffer from 'buffer' package if needed by any browser dependency
 if (typeof window !== 'undefined') {
   (window as any).Buffer = Buffer;
   (window as any).global = window;
